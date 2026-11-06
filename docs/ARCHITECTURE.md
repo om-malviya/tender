@@ -129,3 +129,45 @@ Not worth doing before the deadline: on-chain agent spending limits, UniswapX in
 - Ranking: ~12 candidate paths per token, quotes refreshed every 20 s, buffer 0.25–3%.
 - Hook address mining: 1 in 16,384 salts; dry-run found one on a fork.
 - Real bugs found by fork testing: broken testnet pool prices, 1,000-block `getLogs` cap, Multicall3 missing on Whitechain, block-number cache hiding refunds, hooked-pool quotes leaking into basket legs.
+
+## Appendix A: deep dives
+
+Where to go when a conversation goes deeper than the layer summary above. The study guide entries have line-by-line links, worked examples with real numbers, and judge Q&A.
+
+| Layer | Deep dive |
+|---|---|
+| Invoices, refunds, permit (`CheckoutCore`) | study_B.md **B2**, Module 1 (tokens/permit), Module 2 (CEI, reentrancy) |
+| Exact-output swaps on the PoolManager (`UniswapCheckout`) | study_B.md **B3** (nine steps, flash-accounting table, call trace), Module 3 |
+| Basket payments | study_B.md **B3** (basket), **B9** (how legs are chosen) |
+| The CheckoutHook and address mining | study_B.md **B21**, FEEDBACK.md items 6–7 |
+| Ranking, impact buffer, split routing | study_B.md **B8**, **B22** |
+| Event history, CSV, Hedera sales | study_B.md **B10**, **B19** (RPC limits, Multicall3) |
+| API server and shop | study_B.md **B11**, **B12**, **B17** (widget, 23-line integration) |
+| Agent and spending policy | study_B.md **B13**, Module 6 |
+| Tests and how we know it works | study_B.md **B5**, **B14**, **B18**, **B19** |
+| Whitechain specifics | study_B.md **B19**, Module 5 |
+
+### A.1 The detailed walkthrough (kept from the first version)
+### One payment, end to end (any-token, Unichain)
+1. Shop server calls `createInvoice(USDC, 1.00, expiry, orderRef)` → event `InvoiceCreated`.
+2. Widget opens `/pay/unichain-sepolia/<id>?embed=1`; the page asks `/api/rank`.
+3. Ranker: read invoice → multicall balances → quote every vetted route (exact output) → price tokens with a tiny probe quote (fees removed) → impact → buffer → gas → sort → recommend.
+4. Payer approves `maxAmountIn` (never unlimited), then one of:
+   - `payWithToken`: contract pulls max, `unlock` → swaps backwards per hop (exact out) → `settle` input → `take` USDC straight to the merchant → returns leftover → asserts merchant delta == amount and contract balance == 0.
+   - `payWithBasket` / split: several exact-input legs in one unlock, total ≥ invoice, excess back.
+   - hook route: a generic router swaps through the hooked pool with `hookData=(id, payer)`; `afterSwap` takes exactly the amount to the merchant and marks the invoice paid.
+5. Page posts `tender:paid` to the shop; the shop confirms with `getInvoice` on-chain, never from the message.
+6. Dashboard/CSV rebuild everything from events; Hedera sales from the mirror node.
+
+### Local development = the real thing, copied
+`scripts/dev-fork.sh`: anvil forks of Unichain Sepolia and Whitechain Sepolia (real Uniswap, real USDC/USDT), our contracts deployed with the same scripts as production, test accounts funded by writing token storage, dev wallets in the app. `e2e-fork.sh` and `ui.e2e.ts` drive it automatically.
+
+
+### A.2 Reading the code in order (about 40 minutes)
+1. `contracts/src/CheckoutCore.sol` (183 lines): the state machine.
+2. `contracts/src/UniswapCheckout.sol`: `payWithToken` → `_payExactOut` → `unlockCallback` → `_exactOutCallback` → `_swapExactOut` → `_settle`.
+3. `contracts/src/CheckoutHook.sol` (90 lines): `afterSwap` top to bottom.
+4. `packages/core/src/rank.ts`: steps 1–4 in the comments.
+5. `server/src/app.ts`: one handler per endpoint.
+6. `app/src/pages/PayPage.tsx`: `pay()` has one branch per route kind.
+7. `e2e/fork.e2e.ts`: the whole product in one script, with asserts.
