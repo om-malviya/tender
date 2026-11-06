@@ -14,6 +14,7 @@ import {
   txUrl,
   type ChainConfig,
   type ChainKey,
+  type AuditEntry,
   type HederaSale,
   type Quoter,
   type TradingApiQuote,
@@ -27,10 +28,12 @@ export interface ServerDeps {
   /** Present only when UNISWAP_API_KEY is set. */
   tradingApiFor?: (chain: ChainKey, payer: Address) => (tokenIn: Address, amountOut: bigint) => Promise<TradingApiQuote | null>;
   listHederaSales: (account: string) => Promise<HederaSale[]>;
+  listAuditLog?: (topicId: string) => Promise<AuditEntry[]>;
   /** Public settings the frontend needs (no secrets). */
   publicInfo?: {
     demoMerchant?: Address; // shown on the dashboard when no wallet is connected
     hederaMerchant?: string; // 0.0.x account that receives agent payments
+    hederaTopic?: string; // HCS topic the agent writes its spending audit log to
     shopUrl?: string;
     devWalletAccounts?: Address[]; // LOCAL FORK ONLY: unlocked anvil accounts for the "dev wallet"
   };
@@ -156,6 +159,14 @@ export function createApp(deps: ServerDeps) {
     if (!merchant.success) return c.json({ error: "merchant query parameter must be an address" }, 400);
     const records = await allInvoices(deps, merchant.data);
     return c.json(json({ invoices: records }));
+  });
+
+  /** The agent's spending audit log (HCS topic), read from the mirror node. */
+  app.get("/api/hedera/audit", async (c) => {
+    const topic = c.req.query("topic");
+    if (!topic || !/^\d+\.\d+\.\d+$/.test(topic)) return c.json({ error: "topic must look like 0.0.12345" }, 400);
+    if (!deps.listAuditLog) return c.json({ entries: [] });
+    return c.json(json({ entries: await deps.listAuditLog(topic) }));
   });
 
   app.get("/api/hedera/sales", async (c) => {

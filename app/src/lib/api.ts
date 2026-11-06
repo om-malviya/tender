@@ -25,6 +25,7 @@ export interface AppConfig {
   chains: PublicChain[];
   demoMerchant?: Address;
   hederaMerchant?: string;
+  hederaTopic?: string;
   shopUrl?: string;
   devWalletAccounts?: Address[];
 }
@@ -111,6 +112,13 @@ export interface InvoiceRecordView {
   refunded: string;
   refunds: { amount: string; tx: Hex; at?: number }[];
 }
+export interface AuditEntryView {
+  sequence: number;
+  consensusAt: number;
+  payer: string;
+  body: { kind?: string; merchant?: string; amountUsd?: number; txId?: string; reason?: string; totalSpentUsd?: number } | null;
+  raw: string;
+}
 export interface HederaSaleView {
   txId: string;
   timestamp: number;
@@ -140,6 +148,7 @@ export const api = {
   basket: (chain: ChainKey, invoiceId: string, payer: Address) => post<BasketView>("/api/basket", { chain, invoiceId, payer }),
   invoices: (merchant: Address) => request<{ invoices: InvoiceRecordView[] }>(`/api/invoices?merchant=${merchant}`),
   hederaSales: (account: string) => request<{ sales: HederaSaleView[] }>(`/api/hedera/sales?account=${account}`),
+  auditLog: (topic: string) => request<{ entries: AuditEntryView[] }>(`/api/hedera/audit?topic=${topic}`),
   csvUrl: (merchant: Address, hedera?: string) =>
     `${BASE}/api/export.csv?merchant=${merchant}${hedera ? `&hedera=${hedera}` : ""}`,
 };

@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api.ts";
 import { useAppConfig } from "../lib/appConfig.ts";
-import { PageHeader, Panel, Stat } from "../components/ui.tsx";
+import { Empty, PageHeader, Panel, Stat } from "../components/ui.tsx";
+import { age, usd } from "../lib/format.ts";
 import { AgentSalesTable } from "./DashboardPage.tsx";
 
 /** Hedera x402: what AI agents bought from the merchant, and the rules they buy under. */
@@ -13,6 +14,13 @@ export function AgentsPage() {
     enabled: Boolean(cfg.hederaMerchant),
     refetchInterval: 15_000,
   });
+  const auditQ = useQuery({
+    queryKey: ["hedera-audit", cfg.hederaTopic],
+    queryFn: () => api.auditLog(cfg.hederaTopic!),
+    enabled: Boolean(cfg.hederaTopic),
+    refetchInterval: 15_000,
+  });
+  const audit = auditQ.data?.entries ?? [];
   const sales = salesQ.data?.sales ?? [];
   const total = sales.reduce((s, x) => s + Number(x.amount) / 10 ** x.decimals, 0);
   const agents = new Set(sales.map((s) => s.payer)).size;
@@ -59,6 +67,44 @@ export function AgentsPage() {
 
       <Panel title="Purchases" subtitle="Read from the public Hedera mirror node">
         <AgentSalesTable sales={sales} loading={salesQ.isLoading} configured={Boolean(cfg.hederaMerchant)} />
+      </Panel>
+
+      <Panel
+        title="Spending audit log"
+        subtitle="Every decision the agent makes, bought or refused, written to a Hedera Consensus Service topic. Public and tamper-evident."
+        actions={cfg.hederaTopic && <a className="btn small" href={`https://hashscan.io/testnet/topic/${cfg.hederaTopic}`} target="_blank" rel="noreferrer">Topic {cfg.hederaTopic} ↗</a>}
+      >
+        {!cfg.hederaTopic ? (
+          <Empty>Set HCS_TOPIC_ID on the server (the agent creates the topic on its first run and prints it).</Empty>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Decision</th>
+                  <th>Merchant</th>
+                  <th className="num">Amount</th>
+                  <th>Detail</th>
+                  <th>Age</th>
+                </tr>
+              </thead>
+              <tbody>
+                {audit.map((e) => (
+                  <tr key={e.sequence}>
+                    <td className="mono faint">{e.sequence}</td>
+                    <td>{e.body?.kind === "purchase" ? <span className="pill green">Bought</span> : e.body?.kind === "refused" ? <span className="pill red">Refused</span> : <span className="pill plain">Note</span>}</td>
+                    <td className="mono">{e.body?.merchant ?? "-"}</td>
+                    <td className="num">{e.body?.amountUsd !== undefined ? usd(e.body.amountUsd) : "-"}</td>
+                    <td className="muted">{e.body?.txId ? <a href={`https://hashscan.io/testnet/transaction/${e.body.txId}`} target="_blank" rel="noreferrer" className="mono">{e.body.txId}</a> : (e.body?.reason ?? e.raw)}</td>
+                    <td className="muted">{age(Math.floor(e.consensusAt))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!auditQ.isLoading && audit.length === 0 && <Empty>No entries yet.</Empty>}
+          </div>
+        )}
       </Panel>
     </>
   );

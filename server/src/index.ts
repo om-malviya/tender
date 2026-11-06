@@ -1,6 +1,6 @@
 import { serve } from "@hono/node-server";
 import { createPublicClient, http, type PublicClient } from "viem";
-import { listHederaSales, loadChains, onchainQuoter, quoteViaTradingApi, type ChainKey } from "@tender/core";
+import { listAuditLog, listHederaSales, loadChains, onchainQuoter, quoteViaTradingApi, type ChainKey } from "@tender/core";
 import { createApp } from "./app.ts";
 
 // Wires the API to real networks using environment variables (see .env.example), then starts it.
@@ -21,9 +21,11 @@ const app = createApp({
         quoteViaTradingApi({ apiKey, chainId: chains[k].chain.id, tokenIn, tokenOut: chains[k].settleToken.address, amountOut, swapper: payer })
     : undefined,
   listHederaSales: (account) => listHederaSales({ merchant: account }),
+  listAuditLog: (topicId) => listAuditLog({ topicId }),
   publicInfo: {
     demoMerchant: process.env.DEMO_MERCHANT as `0x${string}` | undefined,
     hederaMerchant: process.env.HEDERA_MERCHANT_ID,
+    hederaTopic: process.env.HCS_TOPIC_ID,
     shopUrl: process.env.SHOP_URL ?? "http://localhost:8788",
     devWalletAccounts: process.env.DEV_WALLET_ACCOUNTS?.split(",").filter(Boolean) as `0x${string}`[] | undefined,
   },
