@@ -37,6 +37,10 @@ interface IWETH {
 ///
 /// If a pool already exists (someone else created WETH/USDC at 0.05%), the script keeps its current price
 /// and adds liquidity at that price; check the log line and pick another fee tier if the price is nonsense.
+///
+/// LITE=true: the same five pools sized for ONE day of faucets (0.01 ETH, 20 USDC): about 0.009 WETH and
+/// 12.6 USDC. Wraps only the WETH it needs. Use invoices of ~0.10 USDC so price impact stays small.
+///           WETH/USDC $5+5 · DEMO/WETH $5.50 of WETH · DEMO/USDC 0.4+0.6 (thin) · hooked $1+1 · hooked 4+6
 contract SeedPools is Script {
     using StateLibrary for IPoolManager;
 
@@ -50,15 +54,12 @@ contract SeedPools is Script {
         address usdc = vm.envOr("UNICHAIN_USDC", DEFAULT_USDC);
         address demo = vm.envAddress("DEMO");
         address hook = vm.envOr("HOOK", address(0));
+        if (vm.envOr("LITE", false)) return _runLite(usdc, demo, hook);
         uint256 wrapEth = vm.envOr("WRAP_ETH", uint256(0.1 ether)); // ETH to wrap into WETH first
 
         vm.startBroadcast();
         if (wrapEth > 0) IWETH(WETH).deposit{value: wrapEth}();
-        DemoToken(demo).mint(msg.sender, 1_000e18);
-
-        IERC20(WETH).approve(address(LIQUIDITY_ROUTER), type(uint256).max);
-        IERC20(usdc).approve(address(LIQUIDITY_ROUTER), type(uint256).max);
-        IERC20(demo).approve(address(LIQUIDITY_ROUTER), type(uint256).max);
+        _prepare(usdc, demo);
 
         // WETH/USDC first. On Unichain Sepolia a 0.05% pool already exists at its own price (~$988/WETH
         // when checked on Nov 4), so read back whatever price the pool really has ...
@@ -72,6 +73,46 @@ contract SeedPools is Script {
             _seed(demo, 2e18, usdc, 3e6, 3000, 60, hook);
         }
         vm.stopBroadcast();
+    }
+
+    function _runLite(address usdc, address demo, address hook) internal {
+        // Price WETH from the live pool first, then wrap exactly the WETH the pools need (minus what we hold).
+        (uint160 p,,,) = POOL_MANAGER.getSlot0(_key(WETH, usdc, 500, 10, address(0)).toId());
+        require(p != 0, "WETH/USDC 0.05% pool missing: run the full profile");
+        uint256 wethMain = _wethForUsdc(5e6, p, usdc);
+        uint256 wethDemo = _wethForUsdc(5.5e6, p, usdc);
+        uint256 wethHook = hook == address(0) ? 0 : _wethForUsdc(1e6, p, usdc);
+        uint256 need = wethMain + wethDemo + wethHook;
+        uint256 have = IERC20(WETH).balanceOf(msg.sender);
+        console2.log("lite: WETH needed (wei)", need);
+
+        vm.startBroadcast();
+        if (need > have) IWETH(WETH).deposit{value: need - have}();
+        _prepare(usdc, demo);
+        _seed(WETH, wethMain, usdc, 5e6, 500, 10, address(0));
+        _seed(demo, 3.6667e18, WETH, wethDemo, 3000, 60, address(0)); // $5.50 / $1.50
+        _seed(demo, 0.4e18, usdc, 0.6e6, 3000, 60, address(0)); // deliberately thin direct pool: the two-hop wins
+        if (hook != address(0)) {
+            _seed(WETH, wethHook, usdc, 1e6, 500, 10, hook);
+            _seed(demo, 4e18, usdc, 6e6, 3000, 60, hook);
+        }
+        vm.stopBroadcast();
+    }
+
+    function _prepare(address usdc, address demo) internal {
+        DemoToken(demo).mint(msg.sender, 1_000e18);
+        IERC20(WETH).approve(address(LIQUIDITY_ROUTER), type(uint256).max);
+        IERC20(usdc).approve(address(LIQUIDITY_ROUTER), type(uint256).max);
+        IERC20(demo).approve(address(LIQUIDITY_ROUTER), type(uint256).max);
+    }
+
+    function _key(address a, address b, uint24 fee, int24 tickSpacing, address hooks)
+        internal
+        pure
+        returns (PoolKey memory)
+    {
+        (address t0, address t1) = a < b ? (a, b) : (b, a);
+        return PoolKey(Currency.wrap(t0), Currency.wrap(t1), fee, tickSpacing, IHooks(hooks));
     }
 
     /// @dev How much WETH is worth `usdcAmount` at the pool price sqrtPriceX96 (price = (sqrtP / 2^96)^2,
