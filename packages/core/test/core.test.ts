@@ -35,15 +35,15 @@ const HOOK = "0x0000000000000000000000000000000000008044" as Address;
 // A fake Quoter with fixed prices: 1 WETH = $3,000, 1 DEMO = $1.50, plus a fee per hop.
 // A route through the "thin" direct DEMO pool costs 20% more, like the real seeded pools.
 // ---------------------------------------------------------------------------
-const usdPer: Record<string, number> = { [WETH.toLowerCase()]: 3000, [DEMO.toLowerCase()]: 1.5 };
+const usdPer: Record<string, number> = { [WETH.toLowerCase()]: 3000, [DEMO.toLowerCase()]: 1.5, [USDC.toLowerCase()]: 1 };
 const decimalsOf = (a: Address) => (a.toLowerCase() === USDC.toLowerCase() ? 6 : 18);
 // Only the pools we seed exist: WETH/USDC 0.05%, DEMO/WETH 0.30%, DEMO/USDC 0.30% (thin), plus the same
 // two token pairs with the CheckoutHook attached.
 const POOLS = new Set([`${WETH}>${USDC}@500`, `${DEMO}>${WETH}@3000`, `${DEMO}>${USDC}@3000`]);
 // Price impact grows with trade size, like real pools: the thin DEMO/USDC pool moves 2% per $1, the
 // medium DEMO/WETH pool 0.5% per $1, and the deep WETH/USDC pool not at all.
-function routeMultiplier(hops: Hop[], usd = 0) {
-  const exists = hops.every((h, i) => POOLS.has(`${h.tokenIn}>${hops[i + 1]?.tokenIn ?? USDC}@${h.fee}`));
+function routeMultiplier(hops: Hop[], usd = 0, out: Address = USDC) {
+  const exists = hops.every((h, i) => POOLS.has(`${h.tokenIn}>${hops[i + 1]?.tokenIn ?? out}@${h.fee}`));
   if (!exists) return null;
   const impactPerUsd = hops.length === 1 && hops[0]!.tokenIn === DEMO ? 0.02 : hops[0]!.tokenIn === DEMO ? 0.005 : 0;
   // like v4: the fee is taken from the input, so you put in 1/(1 - fee) more per hop
@@ -57,11 +57,12 @@ const fakeQuoter: Quoter = {
     const tokens = (usd * m) / usdPer[hops[0]!.tokenIn.toLowerCase()]!;
     return { amountIn: BigInt(Math.ceil(tokens * 10 ** decimalsOf(hops[0]!.tokenIn))), gas: 100_000n };
   },
-  async exactIn(hops, _settle, amountIn) {
-    const m = routeMultiplier(hops);
+  async exactIn(hops, out, amountIn) {
+    // `out` is the final token: USDC for whole routes, the next token when the basket quotes one hop at a time
+    const m = routeMultiplier(hops, 0, out);
     if (m === null) return null;
     const usd = (Number(amountIn) / 10 ** decimalsOf(hops[0]!.tokenIn)) * usdPer[hops[0]!.tokenIn.toLowerCase()]!;
-    return { amountOut: BigInt(Math.floor((usd / m) * 1e6)), gas: 100_000n };
+    return { amountOut: BigInt(Math.floor((usd / m / usdPer[out.toLowerCase()]!) * 10 ** decimalsOf(out))), gas: 100_000n };
   },
 };
 
@@ -266,6 +267,63 @@ describe("buildBasket", () => {
     expect(b.legs).toHaveLength(3);
     expect(b.covers).toBe(true);
     expect(b.guaranteedOut).toBeGreaterThanOrEqual(10_000_000n);
+  });
+
+  it("accounts for legs that share a pool: the second leg's minimum reflects the first leg's price impact", async () => {
+    // A tiny constant-product AMM (x*y=k, 0.3% fee on input) with real reserves, so a trade really moves the
+    // price for the next one. DEMO/WETH and WETH/USDC are each shallow: the DEMO leg (DEMO->WETH->USDC) and
+    // the WETH leg (WETH->USDC) both cross WETH/USDC, exactly the case that failed on the fork.
+    const reserves: Record<string, [bigint, bigint]> = {
+      [`${DEMO}>${WETH}`]: [100n * 10n ** 18n, 5n * 10n ** 16n], // 100 DEMO : 0.05 WETH ($1.50 / $3,000)
+      [`${WETH}>${USDC}`]: [2n * 10n ** 16n, 60_000_000n], // 0.02 WETH : 60 USDC
+    };
+    const swapOut = (pool: string, amountIn: bigint) => {
+      const [x, y] = reserves[pool]!;
+      const inAfterFee = (amountIn * 997n) / 1000n;
+      return (y * inAfterFee) / (x + inAfterFee);
+    };
+    const amm: Quoter = {
+      async exactIn(hops, out, amountIn) {
+        let amt = amountIn;
+        for (let i = 0; i < hops.length; i++) amt = swapOut(`${hops[i]!.tokenIn}>${hops[i + 1]?.tokenIn ?? out}`, amt);
+        return { amountOut: amt, gas: 1n };
+      },
+      async exactOut() {
+        return null; // force the spend-everything branch for both legs
+      },
+    };
+    const demoBal = 10n * 10n ** 18n; // ~$15 of DEMO
+    const wethBal = 4n * 10n ** 15n; // ~$12 of WETH
+    const b = await buildBasket({
+      quoter: amm,
+      settle: USDC,
+      invoiceAmount: 20_000_000n,
+      settleBalance: 0n,
+      slippageBps: 0,
+      holdings: [
+        { token: DEMO, balance: demoBal, hops: demoHops, costRatio: 1 },
+        { token: WETH, balance: wethBal, hops: wethHops, costRatio: 1.01 },
+      ],
+    });
+    // Replay the legs in order on a STATEFUL copy of the pools (reserves change after every swap), the way
+    // the contract runs them in one transaction, independently of how the planner computed its numbers.
+    const live = Object.fromEntries(Object.entries(reserves).map(([k, v]) => [k, [...v] as [bigint, bigint]]));
+    const trade = (pool: string, amountIn: bigint) => {
+      const r = live[pool]!;
+      const inAfterFee = (amountIn * 997n) / 1000n;
+      const out = (r[1] * inAfterFee) / (r[0] + inAfterFee);
+      r[0] += inAfterFee;
+      r[1] -= out;
+      return out;
+    };
+    const leg1 = trade(`${WETH}>${USDC}`, trade(`${DEMO}>${WETH}`, demoBal));
+    const leg2 = trade(`${WETH}>${USDC}`, wethBal);
+    for (const [i, delivered] of [leg1, leg2].entries()) {
+      expect(delivered).toBeGreaterThanOrEqual(b.legs[i]!.minOut); // the contract's LegBelowMin check passes
+      expect(delivered - b.legs[i]!.minOut).toBeLessThanOrEqual(2n); // and the minimum isn't needlessly loose
+    }
+    // The naive stand-alone quote for the WETH leg would have promised more than it can deliver.
+    expect(swapOut(`${WETH}>${USDC}`, wethBal)).toBeGreaterThan(leg2);
   });
 
   it("reports when the wallet simply doesn't hold enough", async () => {
