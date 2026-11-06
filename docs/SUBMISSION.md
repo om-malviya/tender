@@ -40,5 +40,6 @@ An **x402-protected endpoint that settles on Hedera testnet through Blocky402**,
 
 - Endpoint: `GET /api/agent/dataset` on the demo shop (`@x402/hono`, Hedera exact scheme), priced in **HTS USDC** (`0.0.429274`). Discovery via `/.well-known/tender.json`.
 - Agent with **spending controls**: merchant allowlist, per-merchant cap, total budget, human approval above a threshold, enforced on the real 402 price tag before signing (`agent/src/policy.ts`). The demo shows two purchases and a third **refused** by the policy.
+- **HCS topic as a tamper-evident audit log** of every agent decision (bought / refused, amount, reason, transaction id): topic _TBD_, shown on the Agents page.
 - Settled payment: Hedera transaction _TBD_, HashScan _TBD_. Sales show in the merchant dashboard from the mirror node.
 - README covers setup, architecture and the payment flow. Video ≤5 min with the HashScan link.

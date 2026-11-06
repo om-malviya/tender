@@ -1316,3 +1316,20 @@ The **browser** version passes too ([ui.e2e.ts L95](tender/e2e/ui.e2e.ts#L95)): 
 - **Two semantic colours, nothing else.** Sage green = success (Paid, Settled, the ok check). Dusty rose = errors and danger. Open invoices use the accent. Chains, sources, "Not enough", Expired, Cancelled, Refunded are all neutral grey pills. The landing tickets' neon is the one flourish and uses the accent hues.
 - **Scale.** Type ratio 1.25 from 14px (11 · 12 · 14 · 17 · 22 · 28 · 35 · 54). Spacing 4 · 8 · 12 · 16 · 24 · 40 · 64. Controls 36px tall (30 small, 44 hero). Landing content 1200px wide, 64px top bar with 15px links.
 - Everything is a token in `:root` of [styles.css](tender/app/src/styles.css), so a colour change is one line.
+
+---
+
+### B24. Deployment runbooks and the HCS audit log (Nov 6)
+**Runbooks**, so going live is one command each once the keys arrive:
+- [scripts/deploy-unichain.sh](tender/scripts/deploy-unichain.sh): deploys DemoToken + UniswapCheckout + CheckoutHook (mined address), seeds the plain and hooked pools, then makes **two real proof payments**: `payWithToken` through DEMO→WETH→USDC, and a **hook payment through Uniswap's own router**, and checks on-chain that the hook marked the invoice Paid. Prints explorer links and writes `deployments/unichain-sepolia.env`.
+- [scripts/deploy-whitechain.sh](tender/scripts/deploy-whitechain.sh): deploys CheckoutCore with Whitechain's compiler settings, **verifies it on their explorer**, then a real USDT payment and a 0.40 refund. Writes `deployments/whitechain-sepolia.env`.
+- Both were dry-run on the local forks and pass. Two bash-3 (macOS) quirks were found and fixed on the way, which is exactly why you dry-run a runbook.
+
+**HCS audit log** (Hedera "extra points"): the agent now writes every decision to a **Hedera Consensus Service topic**, a public, ordered, tamper-evident log.
+- [agent/src/run.ts](tender/agent/src/run.ts) `audit()`: creates the topic on the first run (`TopicCreateTransaction`, remembered in `ledger.json`), then one `TopicMessageSubmitTransaction` per event: `{kind: "purchase", merchant, amountUsd, txId, totalSpentUsd}` or `{kind: "refused", merchant, amountUsd, reason}`.
+- [packages/core/src/hedera.ts](tender/packages/core/src/hedera.ts) `parseTopicMessages` / `listAuditLog`: reads the topic from the mirror node (base64 → JSON), newest first; unit-tested.
+- API `GET /api/hedera/audit?topic=0.0.x`; the **Agents page** shows the log with Bought/Refused pills and a HashScan link to the topic.
+- **Why it matters:** the spending policy itself runs in the agent's code (an honest limit); the audit log makes what the agent did *publicly verifiable* even if you don't trust the agent. Judges listed exactly this as an extra-points item.
+- Status: code + unit tests done; the live topic gets created on the agent's first real run with your Hedera accounts.
+
+**Judge question.** "Why HCS and not just a database log?" → "Anyone can read it, nobody can edit it, and the sequence numbers prove nothing was dropped. HashScan shows it with no trust in us."

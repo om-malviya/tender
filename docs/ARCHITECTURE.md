@@ -109,7 +109,7 @@ The shop's `GET /api/agent/dataset` is behind an x402 paywall (`@x402/hono` + He
 
 | # | Item | Why | Effort |
 |---|---|---|---|
-| 1 | **HCS audit log for agent spending** (Hedera "extra points") | Each purchase written to a public, tamper-evident topic; shown on the Agents page | 1.5 h |
+| 1 | ~~HCS audit log for agent spending~~ **done Nov 6** | Purchases and refusals written to an HCS topic; Agents page reads it from the mirror node | done |
 | 2 | **Off-chain signed invoices** (EIP-712), paid by `payWithToken` without a prior `createInvoice` tx | Removes the merchant's per-invoice gas and the server-side key for creation | 3 h |
 | 3 | **Batch quoting** via Multicall for the Quoter calls | ~12 quotes per token become 1 RPC round-trip; faster panel | 1.5 h |
 | 4 | **Dynamic gas estimate** (`estimateGas` on the recommended route only) | Accurate gas column where it matters | 1 h |
