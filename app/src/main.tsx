@@ -1,8 +1,10 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { BrowserRouter, Link, Route, Routes } from "react-router-dom";
 import { WagmiProvider } from "wagmi";
 import { App } from "./App.tsx";
+import { LandingPage } from "./pages/LandingPage.tsx";
 import { api } from "./lib/api.ts";
 import { AppConfigContext } from "./lib/appConfig.ts";
 import { buildWagmiConfig } from "./lib/wagmi.ts";
@@ -29,11 +31,37 @@ api
     );
   })
   .catch((e) => {
+    // API unreachable: the landing page still works (its live stats just stay empty); app pages say why.
+    const local = !import.meta.env.VITE_API_URL;
     root.render(
-      <div className="main">
-        <div className="callout red">
-          <b>Can't reach the Tender API.</b> Start it with <span className="mono">npm run server</span> in <span className="mono">tender/</span>. ({String(e.message ?? e)})
-        </div>
-      </div>,
+      <StrictMode>
+        <AppConfigContext.Provider value={{ chains: [] }}>
+          <QueryClientProvider client={new QueryClient()}>
+            <BrowserRouter>
+              <Routes>
+                <Route path="/" element={<LandingPage />} />
+                <Route
+                  path="*"
+                  element={
+                    <div className="main">
+                      <div className="callout red">
+                        <b>The Tender API is offline.</b>{" "}
+                        {local ? (
+                          <>
+                            Start it with <span className="mono">npm run server</span> in <span className="mono">tender/</span>.
+                          </>
+                        ) : (
+                          "Please try again in a minute."
+                        )}{" "}
+                        ({String(e.message ?? e)}) <Link to="/">Back to the overview</Link>
+                      </div>
+                    </div>
+                  }
+                />
+              </Routes>
+            </BrowserRouter>
+          </QueryClientProvider>
+        </AppConfigContext.Provider>
+      </StrictMode>,
     );
   });
