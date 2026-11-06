@@ -51,7 +51,8 @@ export function Panel(props: { title: string; subtitle?: ReactNode; actions?: Re
   );
 }
 
-const statusColor: Record<string, string> = { Paid: "green", Open: "blue", Expired: "amber", Cancelled: "red", Refunded: "violet" };
+// success is green, open is the accent, everything else is neutral grey
+const statusColor: Record<string, string> = { Paid: "green", Open: "accent", Expired: "", Cancelled: "", Refunded: "" };
 export function StatusPill({ status, refunded }: { status: InvoiceStatus; refunded?: boolean }) {
   const label = status === "Paid" && refunded ? "Refunded" : status;
   return <span className={`pill ${statusColor[label] ?? ""}`}>{label}</span>;
@@ -59,14 +60,14 @@ export function StatusPill({ status, refunded }: { status: InvoiceStatus; refund
 
 export function SourcePill({ source }: { source: RouteView["source"] }) {
   if (source === "direct") return <span className="pill plain">Direct</span>;
-  if (source === "uniswap-api") return <span className="pill plain violet">Uniswap API</span>;
-  if (source === "v4-hook") return <span className="pill plain green" title="The pool itself settles the invoice. Paid through a generic Uniswap router, not Tender's contract.">Hook · any router</span>;
-  if (source === "split") return <span className="pill plain amber" title="Two pools in one transaction, to cut price impact">Split</span>;
-  return <span className="pill plain blue">v4 Quoter</span>;
+  if (source === "uniswap-api") return <span className="pill plain">Uniswap API</span>;
+  if (source === "v4-hook") return <span className="pill plain" title="The pool itself settles the invoice. Paid through a generic Uniswap router, not Tender's contract.">Hook · any router</span>;
+  if (source === "split") return <span className="pill plain" title="Two pools in one transaction, to cut price impact">Split</span>;
+  return <span className="pill plain">v4 Quoter</span>;
 }
 
 export function ChainPill({ chain }: { chain: "unichain-sepolia" | "whitechain-sepolia" }) {
-  return <span className={`pill plain ${chain === "unichain-sepolia" ? "violet" : "amber"}`}>{chain === "unichain-sepolia" ? "Unichain" : "Whitechain"}</span>;
+  return <span className="pill plain">{chain === "unichain-sepolia" ? "Unichain" : "Whitechain"}</span>;
 }
 
 /** Truncated monospace address/hash linked to the chain's explorer. */
@@ -138,7 +139,7 @@ export function Identicon({ address, size = 26 }: { address: string; size?: numb
 
 /** A coloured circle with the token symbol, like a wallet's asset list. */
 export function TokenLogo({ symbol, size = 26 }: { symbol: string; size?: number }) {
-  const colors: Record<string, string> = { USDC: "#2775ca", USDT: "#26a17b", WETH: "#627eea", DEMO: "#8b5cf6" };
+  const colors: Record<string, string> = { USDC: "#3b6fb3", USDT: "#3a8f75", WETH: "#5f73c9", DEMO: "#7c66c4" }; // brand hues, toned down
   return (
     <span className="token-logo" style={{ width: size, height: size, background: colors[symbol] ?? "#4b5563" }}>
       {symbol.slice(0, 4)}

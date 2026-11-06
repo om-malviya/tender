@@ -231,7 +231,7 @@ function CreateInvoice() {
     <Panel id="create" title="Create invoice" subtitle="The order reference is stored hashed, so it shows up in the CSV without revealing customer data on-chain.">
       <div className="panel-body">
         {deployed.length === 0 ? (
-          <div className="callout amber">No checkout contract is configured on the server yet.</div>
+          <div className="callout">No checkout contract is configured on the server yet.</div>
         ) : (
           <div className="row">
             <div className="field">

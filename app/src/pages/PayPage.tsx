@@ -386,13 +386,13 @@ export function PayPage() {
                         </td>
                         <td>
                           {i === recommendedIndex ? (
-                            <span className="pill green">Best</span>
+                            <span className="pill accent">Best</span>
                           ) : !r.executable ? (
                             <span className="pill plain" title={r.note}>
                               Compare only
                             </span>
                           ) : !r.affordable ? (
-                            <span className="pill amber" title={`You hold ${amount(r.balance, r.token.decimals)} ${r.token.symbol}`}>
+                            <span className="pill plain" title={`You hold ${amount(r.balance, r.token.decimals)} ${r.token.symbol}`}>
                               Not enough
                             </span>
                           ) : null}

@@ -261,7 +261,7 @@ export function LandingPage() {
             <div key={name} className="built reveal" style={{ transitionDelay: `${(i % 3) * 60}ms` }}>
               <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
                 <b>{name}</b>
-                <span className={`pill plain ${kind === "sponsor" ? "violet" : kind === "chain" ? "blue" : ""}`}>{kind}</span>
+                <span className={`pill plain${kind === "sponsor" ? " accent" : ""}`}>{kind}</span>
               </div>
               <p>{role}</p>
             </div>
