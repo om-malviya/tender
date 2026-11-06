@@ -1395,3 +1395,14 @@ The **browser** version passes too ([ui.e2e.ts L95](tender/e2e/ui.e2e.ts#L95)): 
 - "Is that real Whitechain USDT?" → "Yes, the official contract `0xcedf…55a7`. We got it by swapping WBT on the testnet DEX, the same way other teams did; the swap transaction is in our deployments file."
 - "Show me the refund." → "Invoice #1: paid 1.00 USDT, then the merchant refunded 0.40. The refund is pulled from the merchant's wallet back to the original payer, recorded on-chain, and it can never exceed what was paid."
 - "Why does the permit matter for a merchant?" → "The customer signs once and pays once: one transaction instead of two, which is how card checkouts feel."
+
+---
+
+### B28. Basket bug found by the end-to-end run, and fixed (Nov 6)
+**What happened.** A full fork run paid one invoice with a basket: some USDC, then WETH, then DEMO. The DEMO leg goes DEMO→WETH→**WETH/USDC**, and the WETH leg goes straight through **WETH/USDC**: the same pool. Legs run one after another in one transaction, so the first leg moves that pool's price before the second trades. The planner had quoted each leg *on its own*, so it promised the second leg 0.2017 USDC when it could only deliver 0.1987, and the contract reverted with `LegBelowMin`. **No money moved wrongly**: the per-leg minimum is exactly the guard that stops a bad fill.
+
+**The fix** ([basket.ts](tender/packages/core/src/basket.ts), `marginalOut`): quote every leg **hop by hop**, keeping track of how much each pool has already absorbed from earlier legs. A leg's output on a hop is the pool's *marginal* output: `quote(already in + mine) − quote(already in)`, rounded **down** by one unit, because two rounded quotes can overshoot a real swap by one unit. If a "this token alone covers the rest" leg now falls short, its input is scaled up, or the leg falls back to spending the whole balance.
+
+**The test** replays the legs on a tiny **stateful constant-product AMM** (reserves change after every swap, like a real pool). Each leg must deliver at least its promised minimum, and the minimum may not be needlessly loose (within 2 units). Re-introducing the old stand-alone quoting makes this test fail.
+
+**Judge question.** "What if two tokens in a basket route through the same pool?" → "The planner quotes them against each other: the second leg is priced after the first leg's impact. If prices still move more than the slippage buffer, the contract's per-leg minimum makes the whole transaction revert; nothing is paid wrongly."
