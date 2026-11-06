@@ -66,7 +66,7 @@ Full walkthrough, design trade-offs and backlog: [`docs/ARCHITECTURE.md`](docs/A
 ```bash
 npm install
 cd contracts && forge install && forge test && cd ..     # 41 Solidity tests, incl. a real v4 PoolManager
-npx vitest run                                            # 35 TypeScript tests
+npx vitest run                                            # 37 TypeScript tests
 bash scripts/e2e-fork.sh                                  # end-to-end on local copies of Unichain + Whitechain
 bash scripts/dev-fork.sh                                  # the whole product: http://localhost:5173 and :8788
 ```
