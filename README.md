@@ -6,7 +6,7 @@ A merchant creates an invoice for an exact stablecoin amount. The customer pays 
 
 ETHGlobal Mumbai 2026 · team project · team: [om-malviya](https://github.com/om-malviya), [parthdagia05](https://github.com/parthdagia05) · tracks: Uniswap Foundation (Build with Uniswap), Whitechain (Operate), Hedera (AI Agents That Pay: x402).
 
-- Videos (scripts in [`docs/VIDEOS.md`](docs/VIDEOS.md)): ETHGlobal _[link]_ · Uniswap _[link]_ · Whitechain _[link]_ · Hedera _[link]_
+- Demo video: _[link]_ (script: [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md))
 - Website: [tender.tender-app.workers.dev](https://tender.tender-app.workers.dev) (the landing page; the app pages need the API, which isn't hosted: run the full app with `bash scripts/dev-fork.sh`, or against the live testnets with `bash scripts/live-local.sh`)
 - Build timeline: see [Build timeline](#build-timeline) (the team had a conference clash and informed the organisers; work started before kickoff and is documented commit by commit).
 
@@ -120,7 +120,7 @@ Every category has at least three independent checks, so a pass isn't a coincide
 
 **Are the tests real?** We checked the newest ones by breaking the code on purpose: wrong mirror-node ordering, a quoter that never clears its queue, no Multicall3 fallback, swallowed mirror errors, unvalidated topic ids, a lost split-route label, basket legs quoted without each other's price impact, the pool allowlist switched off, an HBAR price off by 100×, a policy ignoring its HBAR rate, a ledger that forgets its audit topic. Every one of those bugs made a test fail.
 
-**End-to-end** (local forks of the real testnets): `e2e/fork.e2e.ts` (Unichain: invoice → ranking → swap payment → hook payment → basket → refund → CSV), `e2e/whitechain.e2e.ts` (USDT: approve+pay, permit pay, refund, CSV), `e2e/ui.e2e.ts` (headless browser: landing → shop → checkout → pay → shop confirms → Whitechain → merchant refund), `e2e/ui.flows.e2e.ts` (the flows the sponsor videos show: hook payment through any router, split payment, basket payment, CSV export, ticket hover; merchant and payer in separate browser sessions). The deploy runbooks (`scripts/deploy-*.sh`) are rehearsed on forks before every real run.
+**End-to-end** (local forks of the real testnets): `e2e/fork.e2e.ts` (Unichain: invoice → ranking → swap payment → hook payment → basket → refund → CSV), `e2e/whitechain.e2e.ts` (USDT: approve+pay, permit pay, refund, CSV), `e2e/ui.e2e.ts` (headless browser: landing → shop → checkout → pay → shop confirms → Whitechain → merchant refund), `e2e/ui.flows.e2e.ts` (the flows the demo video shows beyond the main checkout: hook payment through any router, split payment, basket payment, CSV export, ticket hover; merchant and payer in separate browser sessions). The deploy runbooks (`scripts/deploy-*.sh`) are rehearsed on forks before every real run.
 
 **Live** (Unichain Sepolia, Nov 6): both proof payments checked on-chain after sending: merchant received exactly 0.10 USDC, invoices marked Paid, checkout and hook hold 0 tokens. See the table at the top.
 

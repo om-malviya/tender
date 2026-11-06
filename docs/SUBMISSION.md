@@ -32,7 +32,7 @@ A **drop-in USDT checkout a merchant adds in about 20 lines** (23 in our demo sh
 - Payment settled in **Whitechain USDT** (`0xcedf…55a7`, obtained by swapping WBT on the testnet DEX, not self-minted): https://explorer.testnet.whitechain.io/tx/0x41485818a21c88008ffbdee188c142278a0d2686068e65e707a25e53a655de64; one-signature permit payment: https://explorer.testnet.whitechain.io/tx/0x9620ce57304e80ec33ca18143560688409e5f4793a121ad7b62aa791c576ccf1; partial refund: https://explorer.testnet.whitechain.io/tx/0x798631d466d2c2c43662b1ba7eade7f36ca9404b32ce5204b95a234f7d8dd710. Contract balance is 0 after each.
 - Why on-chain settlement on Whitechain: final USDT settlement in seconds straight to the merchant's wallet, a public receipt the customer can verify, refunds with an on-chain record, and an exportable ledger from the same payment, which card and bank rails can't give a small merchant.
 - Widget: `app/public/tender.js`; integration: `demo-shop/public/index.html`; merchant view: `app/src/pages/MerchantPage.tsx`.
-- `WHITECHAIN_FEEDBACK.md` included. Steady commit history. A dedicated 2–4 min Whitechain video shows the drop-in code, the customer's checkout, and the merchant's refund and CSV export (script: `docs/VIDEOS.md`, video C).
+- `WHITECHAIN_FEEDBACK.md` included. Steady commit history. The demo video (2–4 min) shows the drop-in code, the customer's checkout, and the merchant's refund and CSV export (0:35 and 2:00–2:30; script: `docs/DEMO_SCRIPT.md`).
 
 ## Hedera: AI Agents That Pay, x402 on Hedera
 
@@ -42,4 +42,4 @@ An **x402-protected endpoint that settles on Hedera testnet through Blocky402**,
 - Agent with **spending controls**: merchant allowlist, per-merchant cap, total budget, human approval above a threshold, enforced on the real 402 price tag before signing (`agent/src/policy.ts`). The demo shows two purchases and a third **refused** by the policy.
 - **HCS topic as a tamper-evident audit log** of every agent decision (bought / refused, amount, reason, transaction id): topic 0.0.11345065 (https://hashscan.io/testnet/topic/0.0.11345065), shown on the Agents page.
 - Settled payments (agent, no human): https://hashscan.io/testnet/transaction/0.0.7162784@1793996113.115144711 and https://hashscan.io/testnet/transaction/0.0.7162784@1793996119.194396627; the third purchase was refused by the policy before signing (message 3 in the topic).
-- README covers setup, architecture and the payment flow. A dedicated Hedera video (≤5 min) shows the agent paying with no human, the HashScan link and the audit topic (script: `docs/VIDEOS.md`, video D).
+- README covers setup, architecture and the payment flow. The demo video (under 5 min) shows the agent paying with no human, the HashScan link and the audit topic (2:30–3:15; script: `docs/DEMO_SCRIPT.md`).

@@ -1669,17 +1669,18 @@ The **browser** version passes too ([ui.e2e.ts L95](tender/e2e/ui.e2e.ts#L95)): 
 
 ---
 
-### B31. Four videos: what each one is for (Nov 7)
-The plan and scripts are in [tender/docs/VIDEOS.md](tender/docs/VIDEOS.md). They're cut from **one recording session** of 16 clips, recorded in a set order on a freshly started demo stack.
-- **A. ETHGlobal (3:30):** the whole product, all three rails, the explorers, the tests.
-- **B. Uniswap:** routing via the v4 Quoter, exact-output payments on the PoolManager, **the CheckoutHook paid by Uniswap's own router**, baskets, Blockscout proofs. Their tech creates differences D1–D7.
-- **C. Whitechain (2–4 min):** the 23-line drop-in, the **customer view**, the **merchant view**, refunds and CSV, the live USDT payment, the 0.40 refund and the permit payment, and "why settle on Whitechain". Their tech creates D8–D10 and D12.
-- **D. Hedera (≤5 min):** the manifest, the 402, two purchases settled with no human, the refusal, **the HashScan link**, the HCS topic. Their tech creates D11.
+### B31. One demo video for all four submissions (Nov 7)
+The script is in [tender/docs/DEMO_SCRIPT.md](tender/docs/DEMO_SCRIPT.md). It's recorded as 16 clips in a set order on a freshly started demo stack.
 
-Every video uses the same 20-second "differences" line over the comparison table. Each sponsor video then says which differences that sponsor makes possible, and gives the other two sponsors one line.
+**Why one video and not four:** no sponsor asks for its own video, and every sponsor's judges watch the project's main video. One 3:45 video meets every rule at once:
+- **Whitechain:** 2–4 minutes, showing the customer (pays in USDT) and the merchant (refund, CSV).
+- **Hedera:** 5 minutes or less, showing a payment settling and the HashScan link.
+- **Uniswap:** no video rule; it still shows the ranking, the exact-output payment, the hook payment and the basket.
 
-**Two honesty lines to say in the videos:**
+In the submission form, each sponsor's section points to its timestamps: Uniswap 0:45–1:45, Whitechain 0:35 and 2:00–2:30, Hedera 2:30–3:15.
+
+**Two honesty lines to say in the video:**
 - The app clips are recorded on the demo stack (a local copy of the testnets); the same contracts are live, and the explorers show it.
-- The Whitechain checkout in the app is approve + pay; the one-signature permit payment is shown on the explorer.
+- The Hedera payment settled in HBAR because Circle's USDC faucet wasn't delivering; the endpoint is priced in USDC by default.
 
-**Tested before recording:** every app screen in the four scripts was clicked through in a real browser, including the hook, split and basket payments (`e2e/ui.flows.e2e.ts`).
+**Tested before recording:** every app screen in the script was clicked through in a real browser, including the hook, split and basket payments (`e2e/ui.flows.e2e.ts`).

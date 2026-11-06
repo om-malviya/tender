@@ -1,4 +1,4 @@
-// The payment flows the sponsor videos show beyond the main demo, clicked through the real UI on the local
+// The payment flows the demo video shows beyond the main checkout, clicked through the real UI on the local
 // stack (scripts/dev-fork.sh, started fresh): hook payment through any router, split payment, basket payment,
 // the merchant's CSV export, and a landing ticket's hover reveal. Merchant and payer use separate browser
 // sessions, like two real people.
