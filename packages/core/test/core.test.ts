@@ -7,6 +7,7 @@ import {
   hederaRows,
   hashscanTxUrl,
   loadChains,
+  onchainQuoter,
   parseMirrorSales,
   parseTopicMessages,
   parseTradingApiQuote,
@@ -353,5 +354,33 @@ describe("HCS audit log", () => {
     expect(entries[1]!.body).toMatchObject({ kind: "purchase", amountUsd: 0.05 });
     expect(entries[0]!.body).toBeNull();
     expect(entries[0]!.raw).toBe("not json");
+  });
+});
+
+describe("onchainQuoter batching", () => {
+  it("sends quotes issued in the same tick as one multicall, and maps failures to null", async () => {
+    let multicalls = 0;
+    let singles = 0;
+    const client = {
+      multicall: async ({ contracts }: { contracts: unknown[] }) => {
+        multicalls++;
+        return contracts.map((_, i) => (i === 1 ? { status: "failure" } : { status: "success", result: [BigInt(100 + i), 50_000n] }));
+      },
+      simulateContract: async () => {
+        singles++;
+        return { result: [7n, 1n] };
+      },
+    } as unknown as PublicClient;
+    const q = onchainQuoter(client, "0x0000000000000000000000000000000000000001");
+    const hops: Hop[] = [{ tokenIn: WETH, fee: 500, tickSpacing: 10 }];
+    const [a, b, c] = await Promise.all([q.exactOut(hops, USDC, 1n), q.exactOut(hops, USDC, 2n), q.exactIn(hops, USDC, 3n)]);
+    expect(multicalls).toBe(1);
+    expect(singles).toBe(0);
+    expect(a).toEqual({ amountIn: 100n, gas: 50_000n });
+    expect(b).toBeNull(); // the failed pool quote
+    expect(c).toEqual({ amountOut: 102n, gas: 50_000n });
+    // a lone call skips the multicall
+    expect(await q.exactOut(hops, USDC, 1n)).toEqual({ amountIn: 7n, gas: 1n });
+    expect(singles).toBe(1);
   });
 });

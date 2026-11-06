@@ -66,33 +66,56 @@ export interface Quoter {
   exactIn(hops: Hop[], settle: Address, amountIn: bigint): Promise<{ amountOut: bigint; gas: bigint } | null>;
 }
 
+/**
+ * Quotes against the on-chain v4 Quoter. Calls made in the same tick are BATCHED into one Multicall3
+ * round-trip (the ranker fires ~12 quotes per token at once), so the ranking panel costs one RPC call
+ * per token instead of twelve. If Multicall3 isn't available the batch falls back to individual calls.
+ */
 export function onchainQuoter(client: PublicClient, quoter: Address): Quoter {
+  type Req = { fn: "quoteExactOutput" | "quoteExactInput"; args: readonly [{ exactCurrency: Address; path: ReturnType<typeof toExactOutPathKeys>; exactAmount: bigint }]; resolve: (r: { a: bigint; gas: bigint } | null) => void };
+  let pending: Req[] = [];
+
+  const single = async (r: Req) => {
+    try {
+      const { result } = await client.simulateContract({ address: quoter, abi: v4QuoterAbi, functionName: r.fn, args: r.args as never });
+      return { a: result[0], gas: result[1] };
+    } catch {
+      return null; // pool missing, not enough liquidity, ...
+    }
+  };
+
+  const flush = async () => {
+    const batch = pending;
+    pending = [];
+    if (batch.length === 1) return batch[0]!.resolve(await single(batch[0]!));
+    try {
+      const results = await client.multicall({
+        contracts: batch.map((r) => ({ address: quoter, abi: v4QuoterAbi, functionName: r.fn, args: r.args }) as never),
+        allowFailure: true,
+      });
+      batch.forEach((r, i) => {
+        const res = results[i] as { status: "success" | "failure"; result?: readonly [bigint, bigint] };
+        r.resolve(res.status === "success" && res.result ? { a: res.result[0], gas: res.result[1] } : null);
+      });
+    } catch {
+      await Promise.all(batch.map(async (r) => r.resolve(await single(r)))); // no Multicall3: one by one
+    }
+  };
+
+  const enqueue = (fn: Req["fn"], args: Req["args"]) =>
+    new Promise<{ a: bigint; gas: bigint } | null>((resolve) => {
+      if (pending.length === 0) queueMicrotask(flush);
+      pending.push({ fn, args, resolve });
+    });
+
   return {
     async exactOut(hops, settle, amountOut) {
-      try {
-        const { result } = await client.simulateContract({
-          address: quoter,
-          abi: v4QuoterAbi,
-          functionName: "quoteExactOutput",
-          args: [{ exactCurrency: settle, path: toExactOutPathKeys(hops), exactAmount: amountOut }],
-        });
-        return { amountIn: result[0], gas: result[1] };
-      } catch {
-        return null; // pool missing, not enough liquidity, ...
-      }
+      const r = await enqueue("quoteExactOutput", [{ exactCurrency: settle, path: toExactOutPathKeys(hops), exactAmount: amountOut }]);
+      return r && { amountIn: r.a, gas: r.gas };
     },
     async exactIn(hops, settle, amountIn) {
-      try {
-        const { result } = await client.simulateContract({
-          address: quoter,
-          abi: v4QuoterAbi,
-          functionName: "quoteExactInput",
-          args: [{ exactCurrency: hops[0]!.tokenIn, path: toExactInPathKeys(hops, settle), exactAmount: amountIn }],
-        });
-        return { amountOut: result[0], gas: result[1] };
-      } catch {
-        return null;
-      }
+      const r = await enqueue("quoteExactInput", [{ exactCurrency: hops[0]!.tokenIn, path: toExactInPathKeys(hops, settle), exactAmount: amountIn }]);
+      return r && { amountOut: r.a, gas: r.gas };
     },
   };
 }
