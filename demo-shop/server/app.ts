@@ -20,6 +20,14 @@ export interface ShopDeps {
   hedera?: { payTo: string; facilitatorUrl: string; priceUsd: string };
   /** false in tests: don't contact the facilitator at startup */
   syncFacilitatorOnStart?: boolean;
+  /** Guards for the one endpoint that spends the merchant's gas (create-invoice). */
+  invoiceGuard?: {
+    /** shared secret the shop page sends as `x-shop-token`; the page gets it from the same server */
+    token?: string;
+    /** max invoices per client IP per window (default 10 per 10 min) */
+    maxPerWindow?: number;
+    windowMs?: number;
+  };
 }
 
 export const DATASET_PATH = "/api/agent/dataset";
@@ -87,8 +95,19 @@ export function createShopApp(deps: ShopDeps) {
   });
 
   // --- humans: create an invoice the Tender widget will pay -------------------------------------------
+  // This is the only endpoint that sends a transaction from the merchant's key, so it is guarded:
+  // a per-IP rate limit, plus a token the shop page carries (so random callers can't burn the merchant's gas).
+  const guard = { maxPerWindow: 10, windowMs: 10 * 60_000, ...deps.invoiceGuard };
+  const hits = new Map<string, number[]>();
   const createBody = z.object({ chain: z.enum(["unichain-sepolia", "whitechain-sepolia"]) });
   app.post("/api/create-invoice", async (c) => {
+    if (guard.token && c.req.header("x-shop-token") !== guard.token) return c.json({ error: "missing or wrong shop token" }, 401);
+    const ip = c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || c.req.header("x-real-ip") || "local";
+    const now = Date.now();
+    const recent = (hits.get(ip) ?? []).filter((t) => now - t < guard.windowMs);
+    if (recent.length >= guard.maxPerWindow) return c.json({ error: "too many invoices from this address; try again later" }, 429);
+    hits.set(ip, [...recent, now]);
+
     const body = createBody.safeParse(await c.req.json().catch(() => ({})));
     if (!body.success) return c.json({ error: body.error.issues }, 400);
     const chain = body.data.chain;

@@ -78,6 +78,22 @@ describe("Chai & Code shop", () => {
     expect(await (await shop.request("/.well-known/tender.json")).json()).toEqual({ merchant: "Chai & Code", paidEndpoints: [] });
   });
 
+  it("guards create-invoice with a token and a rate limit", async () => {
+    const guarded = createShopApp({
+      chains,
+      publicClientFor: () => fakeClient,
+      merchantWalletFor: () => undefined,
+      product: { name: "stickers", priceUsd: "1.00" },
+      invoiceGuard: { token: "s3cret", maxPerWindow: 2 },
+    });
+    const call = (headers: Record<string, string>) =>
+      guarded.request("/api/create-invoice", { method: "POST", body: JSON.stringify({ chain: "unichain-sepolia" }), headers: { "content-type": "application/json", ...headers } });
+    expect((await call({})).status).toBe(401); // no token
+    expect((await call({ "x-shop-token": "s3cret" })).status).toBe(503); // token ok, wallet not configured
+    expect((await call({ "x-shop-token": "s3cret" })).status).toBe(503);
+    expect((await call({ "x-shop-token": "s3cret" })).status).toBe(429); // third within the window
+  });
+
   it("says clearly when x402 or the merchant wallet isn't configured", async () => {
     expect((await shop.request("/api/agent/dataset")).status).toBe(503);
     const res = await shop.request("/api/create-invoice", { method: "POST", body: JSON.stringify({ chain: "unichain-sepolia" }) });

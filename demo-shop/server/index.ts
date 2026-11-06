@@ -9,6 +9,8 @@ const chains = loadChains();
 const account = process.env.MERCHANT_PK ? privateKeyToAccount(process.env.MERCHANT_PK as Hex) : undefined;
 
 const priceUsd = process.env.SHOP_PRICE_USD ?? "1.00";
+// Shared secret between this server and its own page. Random per start unless SHOP_TOKEN is set.
+const shopToken = process.env.SHOP_TOKEN ?? Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
 const agentPriceUsd = process.env.AGENT_PRICE_USD ?? "0.05";
 
 const app = createShopApp({
@@ -17,6 +19,7 @@ const app = createShopApp({
   merchantWalletFor: (k: ChainKey) =>
     account ? { account, wallet: createWalletClient({ account, chain: chains[k].chain, transport: http(chains[k].rpcUrl) }) } : undefined,
   product: { name: "Chai & Code sticker pack", priceUsd },
+  invoiceGuard: { token: shopToken },
   hedera: process.env.HEDERA_MERCHANT_ID
     ? {
         payTo: process.env.HEDERA_MERCHANT_ID,
@@ -31,6 +34,7 @@ const app = createShopApp({
 const page = readFileSync(new URL("../public/index.html", import.meta.url), "utf8")
   .replaceAll("__TENDER_APP_URL__", process.env.TENDER_APP_URL ?? "http://localhost:5173")
   .replaceAll("__PRICE_USD__", priceUsd)
+  .replaceAll("__SHOP_TOKEN__", shopToken)
   .replaceAll("__AGENT_PRICE_USD__", agentPriceUsd);
 app.get("/", (c) => c.html(page));
 

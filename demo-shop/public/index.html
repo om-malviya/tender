@@ -57,7 +57,7 @@ GET /.well-known/tender.json   → what's for sale</pre>
         show("Creating your order…");
         const order = await fetch("/api/create-invoice", {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: { "content-type": "application/json", "x-shop-token": "__SHOP_TOKEN__" },
           body: JSON.stringify({ chain }),
         }).then((r) => r.json());
         if (order.error) return show(order.error);
