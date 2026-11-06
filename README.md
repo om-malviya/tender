@@ -66,7 +66,7 @@ Full walkthrough, design trade-offs and backlog: [`docs/ARCHITECTURE.md`](docs/A
 ```bash
 npm install
 cd contracts && forge install && forge test && cd ..     # 44 Solidity checks (forge prints 41: 4 invariants run as one campaign)
-npx vitest run                                            # 48 TypeScript tests
+npx vitest run                                            # 51 TypeScript tests
 bash scripts/e2e-fork.sh                                  # end-to-end on local copies of Unichain + Whitechain
 bash scripts/dev-fork.sh                                  # the whole product: http://localhost:5173 and :8788
 ```
@@ -77,7 +77,7 @@ Deploy for real: `.env.example` lists every variable; scripts are `contracts/scr
 
 ## Tests
 
-Every category has at least three independent checks, so a pass isn't a coincidence. **92 automated checks** (44 Foundry + 48 Vitest; `forge test` prints 41 because it runs the 4 invariants as one campaign), plus end-to-end runs and the live testnet proofs above.
+Every category has at least three independent checks, so a pass isn't a coincidence. **95 automated checks** (44 Foundry + 51 Vitest; `forge test` prints 41 because it runs the 4 invariants as one campaign), plus end-to-end runs and the live testnet proofs above.
 
 | Category | Sponsor | Checks | What they prove | File |
 |---|---|---|---|---|
@@ -87,6 +87,7 @@ Every category has at least three independent checks, so a pass isn't a coincide
 | Invariants | all | 4 | over 256 random runs × 64 calls: the contract holds nothing, merchant balances match the books, a refund implies a payment, refunds never exceed the amount | `contracts/test/Invariants.t.sol` |
 | Route ranking | Uniswap | 9 | direct / quoter / hooked / split routes ranked by true cost; impact-sized buffers; split shown only when it wins | `packages/core/test/core.test.ts` |
 | Route paths | Uniswap | 4 | candidate paths and v4 PathKey encoding for exact-in and exact-out | `packages/core/test/core.test.ts` |
+| Vetted pools | Uniswap | 4 | only allowlisted pools are routed (wrong fee tier or tick spacing refused, like the broken WETH/USDC 0.30% testnet pool); hooked and plain pools never mix; the ranker never even quotes an unvetted pool | `packages/core/test/core.test.ts` |
 | Basket builder | Uniswap | 4 | greedy legs always cover the invoice with guaranteed minimum outputs; legs that share a pool are quoted against each other's price impact (replayed on a stateful AMM) | `packages/core/test/core.test.ts` |
 | Quoter batching | Uniswap | 3 | same-tick quotes → one Multicall3 call; separate ticks → separate batches; per-quote fallback when Multicall3 fails | `packages/core/test/core.test.ts` |
 | Trading API parser | Uniswap | 4 | executable v4 routes vs v3 / hooked / split (shown, not executed); multi-hop order; malformed quotes rejected | `packages/core/test/core.test.ts` |
@@ -97,7 +98,7 @@ Every category has at least three independent checks, so a pass isn't a coincide
 | Audit log API | Hedera | 3 | malformed topic ids → 400; entries returned; empty when not configured | `server/test/app.test.ts` |
 | Demo shop | Whitechain, Hedera | 3 | x402 paywall manifest, invoice-creation token and rate limit | `server/test/app.test.ts` |
 
-**Are the tests real?** We checked the newest ones by breaking the code on purpose: wrong mirror-node ordering, a quoter that never clears its queue, no Multicall3 fallback, swallowed mirror errors, unvalidated topic ids, a lost split-route label, basket legs quoted without each other's price impact. Every one of those bugs made a test fail.
+**Are the tests real?** We checked the newest ones by breaking the code on purpose: wrong mirror-node ordering, a quoter that never clears its queue, no Multicall3 fallback, swallowed mirror errors, unvalidated topic ids, a lost split-route label, basket legs quoted without each other's price impact, the pool allowlist switched off. Every one of those bugs made a test fail.
 
 **End-to-end** (local forks of the real testnets): `e2e/fork.e2e.ts` (Unichain: invoice → ranking → swap payment → hook payment → basket → refund → CSV), `e2e/whitechain.e2e.ts` (USDT: approve+pay, permit pay, refund, CSV), `e2e/ui.e2e.ts` (headless browser: landing → shop → checkout → pay → shop confirms → Whitechain → merchant refund). The deploy runbooks (`scripts/deploy-*.sh`) are rehearsed on forks before every real run.
 
