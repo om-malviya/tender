@@ -66,7 +66,7 @@ async function main() {
   const client = new x402Client()
     .register("hedera:*", new ExactHederaScheme(createClientHederaSigner(accountId, privateKey, { network: "hedera:testnet" })))
     .onBeforePaymentCreation(async ({ selectedRequirements: req }) => {
-      const amountUsd = requirementToUsd(req);
+      const amountUsd = requirementToUsd(req, undefined, policy.hbarUsd);
       const decision = decide(policy, ledger, { merchant, amountUsd });
       if (!decision.allow) {
         await audit(hedera, { kind: "refused", merchant, amountUsd, reason: decision.reason, needsHuman: decision.needsHuman ?? false }).catch((e) => console.log(`agent: audit failed: ${e}`));

@@ -25,6 +25,9 @@ const app = createShopApp({
         payTo: process.env.HEDERA_MERCHANT_ID,
         facilitatorUrl: process.env.X402_FACILITATOR_URL ?? "https://api.testnet.blocky402.com",
         priceUsd: agentPriceUsd,
+        // X402_ASSET=hbar prices the agent endpoint in native HBAR (testnet HBAR has no market price, so the
+        // rate is a setting; the agent's policy.json names the same rate). Default: Hedera testnet USDC.
+        hbarPerUsd: process.env.X402_ASSET === "hbar" ? Number(process.env.HBAR_PER_USD ?? "10") : undefined,
       }
     : undefined,
 });

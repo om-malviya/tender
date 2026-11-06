@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { zeroAddress, type Address, type PublicClient } from "viem";
 import { loadChains, type HederaSale, type Quoter } from "@tender/core";
 import { createApp } from "../src/app.ts";
-import { createShopApp } from "../../demo-shop/server/app.ts";
+import { createShopApp, x402Price } from "../../demo-shop/server/app.ts";
 
 const DEMO = "0x00000000000000000000000000000000000000D3" as Address;
 const chains = loadChains({ UNICHAIN_CHECKOUT: "0x0000000000000000000000000000000000000c0c", DEMO });
@@ -92,6 +92,25 @@ describe("Chai & Code shop", () => {
     expect((await call({ "x-shop-token": "s3cret" })).status).toBe(503); // token ok, wallet not configured
     expect((await call({ "x-shop-token": "s3cret" })).status).toBe(503);
     expect((await call({ "x-shop-token": "s3cret" })).status).toBe(429); // third within the window
+  });
+
+  it("prices the agent endpoint in USDC by default, or in native HBAR at a set rate", async () => {
+    const make = (hbarPerUsd?: number) =>
+      createShopApp({
+        chains,
+        publicClientFor: () => fakeClient,
+        merchantWalletFor: () => undefined,
+        product: { name: "stickers", priceUsd: "1.00" },
+        hedera: { payTo: "0.0.1234", facilitatorUrl: "http://facilitator.invalid", priceUsd: "0.05", hbarPerUsd },
+        syncFacilitatorOnStart: false,
+      });
+    const usdc = (await (await make().request("/.well-known/tender.json")).json()).paidEndpoints[0];
+    const hbar = (await (await make(10).request("/.well-known/tender.json")).json()).paidEndpoints[0];
+    expect(usdc).toMatchObject({ asset: "0.0.429274", priceUsd: "0.05", network: "hedera:testnet" });
+    expect(hbar).toMatchObject({ asset: "0.0.0", priceUsd: "0.05", network: "hedera:testnet" });
+    // the price the 402 response actually demands: "$0.05" (USDC) or 0.5 HBAR in tinybars at 10 HBAR per USD
+    expect(x402Price({ priceUsd: "0.05" })).toBe("$0.05");
+    expect(x402Price({ priceUsd: "0.05", hbarPerUsd: 10 })).toEqual({ asset: "0.0.0", amount: "50000000" });
   });
 
   it("says clearly when x402 or the merchant wallet isn't configured", async () => {

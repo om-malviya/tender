@@ -38,7 +38,25 @@ describe("agent spending policy", () => {
 
   it("only understands Hedera testnet USDC", () => {
     expect(requirementToUsd({ network: "hedera:testnet", asset: "0.0.429274", amount: "50000" })).toBe(0.05);
-    expect(requirementToUsd({ network: "hedera:testnet", asset: "0.0.0", amount: "50000" })).toBeNull(); // HBAR
+    expect(requirementToUsd({ network: "hedera:testnet", asset: "0.0.0", amount: "50000" })).toBeNull(); // HBAR, no rate set
     expect(decide(policy, emptyLedger(), { merchant: shop, amountUsd: null }).allow).toBe(false);
+  });
+
+  it("understands HBAR only at the rate its policy names, and keeps budgets in dollars", () => {
+    const req = { network: "hedera:testnet", asset: "0.0.0", amount: "50000000" }; // 0.5 HBAR in tinybars
+    expect(requirementToUsd(req, undefined, 0.1)).toBeCloseTo(0.05); // at $0.10 per HBAR
+    expect(requirementToUsd(req, undefined, 0)).toBeNull(); // a zero or missing rate is no rate
+    expect(requirementToUsd({ ...req, network: "hedera:mainnet" }, undefined, 0.1)).toBeNull(); // testnet only
+  });
+
+  it("the demo sequence holds in HBAR too: two 0.5-HBAR purchases, then the per-merchant cap", () => {
+    const hbarPolicy = { ...policy, hbarUsd: 0.1 };
+    const usd = requirementToUsd({ network: "hedera:testnet", asset: "0.0.0", amount: "50000000" }, undefined, hbarPolicy.hbarUsd)!;
+    let ledger = emptyLedger();
+    for (const n of [1, 2]) {
+      expect(decide(hbarPolicy, ledger, { merchant: shop, amountUsd: usd }).allow).toBe(true);
+      ledger = recordSpend(ledger, { at: "t", merchant: shop, amountUsd: usd, txId: `tx${n}` });
+    }
+    expect(decide(hbarPolicy, ledger, { merchant: shop, amountUsd: usd })).toMatchObject({ allow: false });
   });
 });

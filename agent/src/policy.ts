@@ -10,6 +10,8 @@ export interface SpendingPolicy {
   perMerchantCap: number; // USD it may spend at any single merchant
   allowlist: string[]; // merchant hostnames it may pay at all
   humanApprovalAbove: number; // single payments above this need a human (the agent refuses)
+  /** USD per HBAR. Set it to let the agent pay merchants that price in native HBAR; unset = USDC only. */
+  hbarUsd?: number;
 }
 
 export interface LedgerEntry {
@@ -28,7 +30,7 @@ export type Decision = { allow: true } | { allow: false; reason: string; needsHu
 
 /** The decision itself: a pure function, so every rule is unit-tested. */
 export function decide(policy: SpendingPolicy, ledger: Ledger, req: { merchant: string; amountUsd: number | null }): Decision {
-  if (req.amountUsd === null) return { allow: false, reason: "price is not in a currency this agent understands (USDC only)" };
+  if (req.amountUsd === null) return { allow: false, reason: "price is not in a currency this agent understands" };
   if (!policy.allowlist.includes(req.merchant)) return { allow: false, reason: `merchant "${req.merchant}" is not on the allowlist` };
   if (req.amountUsd > policy.humanApprovalAbove)
     return { allow: false, needsHuman: true, reason: `$${req.amountUsd} is above the $${policy.humanApprovalAbove} auto-approve limit: needs a human` };
@@ -40,10 +42,20 @@ export function decide(policy: SpendingPolicy, ledger: Ledger, req: { merchant: 
   return { allow: true };
 }
 
-/** Converts an x402 payment requirement into USD. Only Hedera testnet USDC (6 decimals) is understood. */
-export function requirementToUsd(req: { network: string; asset: string; amount: string }, usdcTokenId = "0.0.429274"): number | null {
-  if (req.network !== "hedera:testnet" || req.asset !== usdcTokenId) return null;
-  return Number(req.amount) / 1e6;
+/**
+ * Converts an x402 payment requirement into USD, so every budget stays in dollars. Hedera testnet USDC
+ * (6 decimals) always; native HBAR ("0.0.0", 8 decimals = tinybars) only at a rate the policy names.
+ * Anything else returns null and the agent refuses it.
+ */
+export function requirementToUsd(
+  req: { network: string; asset: string; amount: string },
+  usdcTokenId = "0.0.429274",
+  hbarUsd?: number,
+): number | null {
+  if (req.network !== "hedera:testnet") return null;
+  if (req.asset === usdcTokenId) return Number(req.amount) / 1e6;
+  if (req.asset === "0.0.0" && hbarUsd && hbarUsd > 0) return (Number(req.amount) / 1e8) * hbarUsd;
+  return null;
 }
 
 export const emptyLedger = (): Ledger => ({ totalUsd: 0, perMerchant: {}, entries: [] });

@@ -17,7 +17,7 @@ export interface ShopDeps {
   /** The merchant's wallet (testnet key held by the shop server; a demo shortcut, see README). */
   merchantWalletFor: (chain: ChainKey) => { wallet: WalletClient; account: Account } | undefined;
   product: { name: string; priceUsd: string };
-  hedera?: { payTo: string; facilitatorUrl: string; priceUsd: string };
+  hedera?: { payTo: string; facilitatorUrl: string; priceUsd: string; /** price in native HBAR at this many HBAR per USD (default: USDC) */ hbarPerUsd?: number };
   /** false in tests: don't contact the facilitator at startup */
   syncFacilitatorOnStart?: boolean;
   /** Guards for the one endpoint that spends the merchant's gas (create-invoice). */
@@ -31,6 +31,13 @@ export interface ShopDeps {
 }
 
 export const DATASET_PATH = "/api/agent/dataset";
+const HBAR_ASSET = "0.0.0"; // x402's id for native HBAR
+
+/** "$0.05" = priced in Hedera testnet USDC (the default); with hbarPerUsd, the same price in tinybars of HBAR. */
+export function x402Price(h: { priceUsd: string; hbarPerUsd?: number }) {
+  if (!h.hbarPerUsd) return `$${h.priceUsd}`;
+  return { asset: HBAR_ASSET, amount: String(Math.round(Number(h.priceUsd) * h.hbarPerUsd * 1e8)) };
+}
 
 export function createShopApp(deps: ShopDeps) {
   const app = new Hono();
@@ -45,7 +52,7 @@ export function createShopApp(deps: ShopDeps) {
       paymentMiddleware(
         {
           [`GET ${DATASET_PATH}`]: {
-            accepts: { scheme: "exact", network: "hedera:testnet", payTo: deps.hedera.payTo, price: `$${deps.hedera.priceUsd}` },
+            accepts: { scheme: "exact", network: "hedera:testnet", payTo: deps.hedera.payTo, price: x402Price(deps.hedera) },
             description: "Chai & Code: today's Mumbai chai price index (JSON)",
             mimeType: "application/json",
           },
@@ -70,7 +77,7 @@ export function createShopApp(deps: ShopDeps) {
               description: "Today's Mumbai chai price index",
               protocol: "x402",
               network: "hedera:testnet",
-              asset: HEDERA_TESTNET_USDC,
+              asset: deps.hedera.hbarPerUsd ? HBAR_ASSET : HEDERA_TESTNET_USDC,
               priceUsd: deps.hedera.priceUsd,
             },
           ]
