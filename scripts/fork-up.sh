@@ -76,7 +76,7 @@ set_usdt "$MERCHANT" 50000000  # 50 USDT for refunds
 # write broadcast files, so a local run never mixes with records of a real Whitechain deployment.
 cd contracts
 WC_OUT=$(FOUNDRY_PROFILE=whitechain forge create src/CheckoutCore.sol:CheckoutCore --skip test --skip TenderFixture \
-  --rpc-url $WC_RPC --private-key $DEPLOYER_PK --broadcast --constructor-args "[$USDT]" 2>&1)
+  --rpc-url $WC_RPC --private-key $DEPLOYER_PK --broadcast --constructor-args "[$USDT]" 0x0000000000000000000000000000000000000000 2>&1)
 cd ..
 WC_CHECKOUT=$(echo "$WC_OUT" | awk '/Deployed to:/{print $3}')
 WC_TX=$(echo "$WC_OUT" | awk '/Transaction hash:/{print $3}')

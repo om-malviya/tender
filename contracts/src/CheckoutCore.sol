@@ -41,6 +41,10 @@ contract CheckoutCore is ReentrancyGuard {
 
     mapping(uint256 => Invoice) internal _invoices;
 
+    /// @notice The CheckoutHook (Uniswap v4) allowed to settle invoices from inside a swap. address(0) = none
+    ///         (Whitechain). Fixed at deploy: its address is known in advance because hooks live at mined addresses.
+    address public immutable hook;
+
     event InvoiceCreated(
         uint256 indexed id, address indexed merchant, address settleToken, uint256 amount, uint64 expiry, bytes32 orderRef
     );
@@ -66,11 +70,13 @@ contract CheckoutCore is ReentrancyGuard {
     error NotPaid();
     error NotMerchant();
     error RefundTooLarge();
+    error NotHook();
 
-    constructor(address[] memory settleTokens) {
+    constructor(address[] memory settleTokens, address hook_) {
         for (uint256 i = 0; i < settleTokens.length; i++) {
             isSettleToken[settleTokens[i]] = true;
         }
+        hook = hook_;
     }
 
     // ---------------------------------------------------------------------
@@ -143,6 +149,23 @@ contract CheckoutCore is ReentrancyGuard {
     }
 
     // ---------------------------------------------------------------------
+    // Settlement by the Uniswap v4 CheckoutHook
+    // ---------------------------------------------------------------------
+
+    /// @notice Called by the CheckoutHook during a swap through a hooked pool: the hook has already sent exactly
+    ///         `invoice.amount` of the settle token to the merchant (via PoolManager.take), so here we only record it.
+    /// @dev Checks-effects only; no token moves in this function. The hook is the only caller.
+    function settleFromHook(uint256 id, address payer, address tokenIn, uint256 amountIn)
+        external
+        returns (address merchant, address settleToken, uint256 amount)
+    {
+        if (msg.sender != hook || hook == address(0)) revert NotHook();
+        Invoice storage inv = _markPaidBy(id, payer);
+        emit InvoicePaid(id, inv.merchant, payer, tokenIn, amountIn, inv.amount);
+        return (inv.merchant, inv.settleToken, inv.amount);
+    }
+
+    // ---------------------------------------------------------------------
     // Views
     // ---------------------------------------------------------------------
 
@@ -176,8 +199,12 @@ contract CheckoutCore is ReentrancyGuard {
     ///      If anything later in the transaction fails, the whole transaction reverts and the
     ///      invoice is Open again, so marking it early is always safe.
     function _markPaid(uint256 id) internal returns (Invoice storage inv) {
+        return _markPaidBy(id, msg.sender);
+    }
+
+    function _markPaidBy(uint256 id, address payer) internal returns (Invoice storage inv) {
         inv = _requirePayable(id);
         inv.status = Status.Paid;
-        inv.payer = msg.sender;
+        inv.payer = payer;
     }
 }

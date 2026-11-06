@@ -12,7 +12,7 @@ import {CheckoutCore} from "../src/CheckoutCore.sol";
 ///   FOUNDRY_PROFILE=whitechain forge verify-contract <address> src/CheckoutCore.sol:CheckoutCore \
 ///       --rpc-url https://rpc.testnet.whitechain.io/ --verifier blockscout \
 ///       --verifier-url https://explorer.testnet.whitechain.io/api/ \
-///       --constructor-args $(cast abi-encode "constructor(address[])" "[0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7]")
+///       --constructor-args $(cast abi-encode "constructor(address[],address)" "[0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7]" 0x0000000000000000000000000000000000000000)
 contract DeployWhitechain is Script {
     /// Whitechain's test USDT. The prize requires payments in THIS token (not a self-minted one).
     address internal constant USDT = 0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7;
@@ -22,7 +22,7 @@ contract DeployWhitechain is Script {
         settle[0] = USDT;
 
         vm.startBroadcast();
-        core = new CheckoutCore(settle);
+        core = new CheckoutCore(settle, address(0)); // no Uniswap on Whitechain, so no hook
         vm.stopBroadcast();
 
         console2.log("CheckoutCore (Whitechain)", address(core));

@@ -24,7 +24,7 @@ contract CheckoutCoreTest is Test {
         other = new MockERC20("Other", "OTH", 6);
         address[] memory settle = new address[](1);
         settle[0] = address(usdt);
-        core = new CheckoutCore(settle);
+        core = new CheckoutCore(settle, address(0));
 
         usdt.mint(payer, 1_000e6);
         vm.prank(payer);

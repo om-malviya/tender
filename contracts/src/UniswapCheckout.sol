@@ -63,7 +63,9 @@ contract UniswapCheckout is CheckoutCore, IUnlockCallback {
     error FeeOnTransfer();
     error InvariantBroken();
 
-    constructor(IPoolManager _poolManager, address[] memory settleTokens) CheckoutCore(settleTokens) {
+    constructor(IPoolManager _poolManager, address[] memory settleTokens, address hook_)
+        CheckoutCore(settleTokens, hook_)
+    {
         poolManager = _poolManager;
     }
 
