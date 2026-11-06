@@ -15,8 +15,8 @@ TAG=$(git rev-parse --short HEAD)
 # 1. image
 aws ecr describe-repositories --repository-names "$REPO" --region "$REGION" >/dev/null 2>&1 || aws ecr create-repository --repository-name "$REPO" --region "$REGION" >/dev/null
 aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "$ECR" >/dev/null
-docker build --platform linux/amd64 -t "$ECR/$REPO:$TAG" .
-docker push "$ECR/$REPO:$TAG" >/dev/null
+# App Runner runs linux/amd64; buildx builds that on an ARM Mac and pushes it straight to ECR
+docker buildx build --platform linux/amd64 -t "$ECR/$REPO:$TAG" --push .
 echo "== pushed $ECR/$REPO:$TAG"
 
 # 2. App Runner needs a role that may pull from ECR
@@ -30,6 +30,12 @@ fi
 # env vars for the containers, from .env.deploy (KEY=VALUE lines) as App Runner JSON
 ENV_JSON=$(grep -vE '^\s*(#|$)' .env.deploy | jq -Rn '[inputs | capture("^(?<k>[^=]+)=(?<v>.*)$")] | map({(.k): .v}) | add')
 
+# COST CAP: at most 2 instances per service, 1 always warm. Even a burst of judges can't scale spend past
+# 2 x (0.25 vCPU, 0.5 GB). Roughly $4-8/month per service at rest.
+SCALING_ARN=$(aws apprunner create-auto-scaling-configuration --region "$REGION" --auto-scaling-configuration-name tender-capped \
+  --max-concurrency 100 --min-size 1 --max-size 2 --query AutoScalingConfiguration.AutoScalingConfigurationArn --output text 2>/dev/null \
+  || aws apprunner list-auto-scaling-configurations --region "$REGION" --auto-scaling-configuration-name tender-capped --query 'AutoScalingConfigurationSummaryList[0].AutoScalingConfigurationArn' --output text)
+
 deploy_service() { # name port command
   local name=$1 port=$2 cmd=$3
   local cfg
@@ -40,9 +46,9 @@ deploy_service() { # name port command
   arn=$(aws apprunner list-services --region "$REGION" --query "ServiceSummaryList[?ServiceName=='$name'].ServiceArn" --output text)
   if [ -z "$arn" ]; then
     arn=$(aws apprunner create-service --region "$REGION" --service-name "$name" --source-configuration "$cfg" \
-      --instance-configuration '{"Cpu":"0.25 vCPU","Memory":"0.5 GB"}' --query Service.ServiceArn --output text)
+      --instance-configuration '{"Cpu":"0.25 vCPU","Memory":"0.5 GB"}' --auto-scaling-configuration-arn "$SCALING_ARN" --query Service.ServiceArn --output text)
   else
-    aws apprunner update-service --region "$REGION" --service-arn "$arn" --source-configuration "$cfg" >/dev/null
+    aws apprunner update-service --region "$REGION" --service-arn "$arn" --source-configuration "$cfg" --auto-scaling-configuration-arn "$SCALING_ARN" >/dev/null
   fi
   aws apprunner wait service-running --region "$REGION" --service-arn "$arn" 2>/dev/null || sleep 60
   echo "== $name: https://$(aws apprunner describe-service --region "$REGION" --service-arn "$arn" --query Service.ServiceUrl --output text)"
