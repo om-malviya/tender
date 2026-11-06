@@ -2,7 +2,7 @@
 
 The one file to open before a judge conversation. Everything here is as built on Nov 6, 2026.
 
-## 1. Infrastructure map
+## 1. Infrastructure, layer by layer (▲ = where Tender differs from Universal Router / 0x Swap-and-Send / Coinbase Commerce OPP)
 
 ```
                  ┌──────────────── demo-shop (:8788, Hono) ─────────────────┐
@@ -34,21 +34,51 @@ The one file to open before a judge conversation. Everything here is as built on
    pools: WETH/USDC, DEMO/WETH, DEMO/USDC (thin), WETH/USDC+hook, DEMO/USDC+hook
 ```
 
-Shared library `packages/core`: config, routes, quoting, ranking, basket, history, CSV, Hedera. Imported by server, shop, agent and app.
+### Layer 1: Settlement contracts (Solidity, Foundry)
+**`CheckoutCore`** (both chains): invoice state machine `Open → Paid → (refunded…) / Cancelled`, with `createInvoice`, `payInvoice`, `payInvoiceWithPermit` (EIP-2612, one transaction), `refund` (partial, only to the recorded payer, only by the merchant), `cancel`. Tokens move payer → merchant inside the same call; the contract never holds a balance. No owner, no upgrade: the settle-token allowlist and the hook address are fixed at deploy.
+- ▲ **vs all three:** none of them has an invoice lifecycle on-chain. Universal Router and 0x are swap executors; Coinbase OPP has one-shot "transfer intents" signed by an **operator**. Tender has **no operator or admin**, and refunds are part of the same contract and tied to the original payer.
+
+**`UniswapCheckout is CheckoutCore`** (Unichain): `payWithToken(id, tokenIn, maxAmountIn, Hop[] path, deadline)` and `payWithBasket(id, Leg[] legs, deadline)`. It calls the v4 **PoolManager directly**: `unlock` → `unlockCallback` swaps each hop backwards with exact output → `settle` the input → `take` the USDC **straight to the merchant** → return the leftover → assert `merchant delta == amount` and `contract balance == 0`. Only hook-free pools (`hooks = address(0)` is hard-coded).
+- ▲ **vs Universal Router:** no router in the middle, no Permit2 allowance from our contract; the merchant guarantee is an on-chain assertion, not a convention.
+- ▲ **vs 0x Swap-and-Send:** 0x delivers "whatever the swap produced" to `recipient`; Tender delivers **exactly** the invoice and refunds the input difference in the same transaction.
+- ▲ **vs Coinbase OPP:** same intent as `swapAndTransferUniswapV3Token`, but v4 (flash accounting, one `take` to the merchant instead of swap-to-contract-then-transfer), **no operator signature**, and the **basket**: one invoice from several tokens in one transaction, which none of the three can do.
+
+**`CheckoutHook`** (Unichain, v4 hook at a mined address): `afterSwap` + `afterSwapReturnDelta`. A swap through a hooked pool carrying `hookData = (invoiceId, payer)` makes the hook `take` exactly the invoice amount to the merchant, charge it to the swapper, keep the rest as change, and mark the invoice paid via `settleFromHook` (hook-only). Output short → whole swap reverts.
+- ▲ **vs all three (the biggest difference):** their payment logic lives in a router or a transfers contract that the payer's software must call. Tender's lives **in the pool**: any router, wallet or aggregator that forwards hookData pays the invoice. Proven with Uniswap's own `PoolSwapTest` router; Tender's contract is never called.
+
+### Layer 2: Routing and pricing (`packages/core`, TypeScript)
+`rankRoutes`: read the invoice → one multicall for balances → enumerate direct and via-WETH paths over a **vetted pool allowlist** → quote all with the on-chain v4 **Quoter** (and the Trading API when a key is set) → price each token from a tiny probe quote with fees removed → compute **price impact** per route → size the **slippage buffer from impact** (0.25–3%) → add gas (measured constants) → sort by total USD cost → recommend the cheapest affordable, executable route. Also builds **split routes** (two pools, one transaction) and **basket** payments. Hook pools appear as "any router" routes with ready-made swap arguments.
+- ▲ **vs 0x:** 0x's routing is server-side and opaque; the payer sees one quote. Tender shows **every route with input, fees+impact, gas and total**, and lets the payer pick.
+- ▲ **vs Universal Router / OPP:** neither routes at all; the caller supplies a path/pool. OPP needs the caller to choose a v3 fee tier. Tender's buffer adapts to the pool's measured impact instead of a flat percentage.
+- ▲ **vetted pools:** the ranker refuses pools with broken prices (found on the real testnet). The others trust whatever pool the caller or server picks.
+
+### Layer 3: API (`server`, Hono, read-only, no keys)
+`/api/rank`, `/api/basket`, `/api/invoices` (history rebuilt from contract **events**, scanned in RPC-safe chunks and cached), `/api/export.csv` (all rails), `/api/hedera/sales` (mirror node), `/api/config` (chains, addresses, tokens: the frontend hardcodes nothing). Holds no private keys and no database; the chain is the database.
+- ▲ The three platforms don't ship a merchant back office. OPP has a Transferred event you can index yourself; Tender gives the merchant history, refunds and an accountant CSV out of the box, across three rails.
+
+### Layer 4: Frontend and widget (`app`, Vite + React + wagmi; `app/public/tender.js`)
+Dashboard, pay page (ranked routes panel, pay, receipt), merchant page (create, refund, cancel, CSV), agent sales. Approvals are always for the exact amount, never unlimited; USDT-style tokens get the approve-to-zero dance. The widget is one `<script>` + `Tender.checkout({...})`: opens the pay page in a **popup** (wallets don't inject into cross-origin iframes), accepts "paid" only from Tender's origin, and the shop still confirms on-chain.
+- ▲ **vs Coinbase Commerce:** Coinbase's checkout is hosted by Coinbase and operator-gated; Tender's widget is self-hostable and talks only to public contracts.
+
+### Layer 5: Second rail, Whitechain (USDT)
+Same `CheckoutCore`, compiled with Whitechain's required solc 0.8.30 / prague, settle token = their official USDT (permit confirmed working: domain "Tether USD" / "1"). Same widget, same dashboard, same CSV.
+- ▲ None of the three is a multi-chain merchant product; OPP is per-chain swaps, 0x and Universal Router are swap tools.
+
+### Layer 6: Third rail, Hedera x402 (AI agents)
+The shop's `GET /api/agent/dataset` is behind an x402 paywall (`@x402/hono` + Hedera "exact" scheme). The agent discovers the endpoint from `/.well-known/tender.json`, gets a 402 price tag, runs its **spending policy** (allowlist, per-merchant cap, total budget, human approval above a threshold) on the real price tag, signs a Hedera USDC transfer; the facilitator verifies, pays the network fee and settles; the sale shows up in the merchant dashboard from the mirror node.
+- ▲ None of the three sells to agents at all. Tender treats an agent as another customer of the same merchant.
+
+### Layer 7: Deployment and local infrastructure
+`DeployUnichain.s.sol` predicts the checkout address from the deployer nonce, **mines a CREATE2 salt** so the hook's address carries its permission bits, deploys through the deterministic deployer. `SeedPools.s.sol` creates plain and hooked pools priced off the live WETH/USDC pool. `DeployWhitechain.s.sol` + blockscout verification. `scripts/dev-fork.sh` runs the whole product against local anvil copies of both testnets (real Uniswap, real USDC/USDT, storage-funded test accounts, dev wallets); `e2e-fork.sh` and `ui.e2e.ts` drive it automatically.
+- ▲ The three are deployed by their vendors; Tender is deployable by any merchant, and its full stack is reproducible on a laptop in one command.
 
 ### One payment, end to end (any-token, Unichain)
 1. Shop server calls `createInvoice(USDC, 1.00, expiry, orderRef)` → event `InvoiceCreated`.
 2. Widget opens `/pay/unichain-sepolia/<id>?embed=1`; the page asks `/api/rank`.
-3. Ranker: read invoice → multicall balances → quote every vetted route (exact output) → price tokens with a tiny probe quote (fees removed) → impact → buffer → gas → sort → recommend.
-4. Payer approves `maxAmountIn` (never unlimited), then one of:
-   - `payWithToken`: contract pulls max, `unlock` → swaps backwards per hop (exact out) → `settle` input → `take` USDC straight to the merchant → returns leftover → asserts merchant delta == amount and contract balance == 0.
-   - `payWithBasket` / split: several exact-input legs in one unlock, total ≥ invoice, excess back.
-   - hook route: a generic router swaps through the hooked pool with `hookData=(id, payer)`; `afterSwap` takes exactly the amount to the merchant and marks the invoice paid.
+3. Ranker quotes and ranks (Layer 2).
+4. Payer approves `maxAmountIn`, then one of `payWithToken`, `payWithBasket`/split, or a generic-router swap through the hooked pool.
 5. Page posts `tender:paid` to the shop; the shop confirms with `getInvoice` on-chain, never from the message.
 6. Dashboard/CSV rebuild everything from events; Hedera sales from the mirror node.
-
-### Local development = the real thing, copied
-`scripts/dev-fork.sh`: anvil forks of Unichain Sepolia and Whitechain Sepolia (real Uniswap, real USDC/USDT), our contracts deployed with the same scripts as production, test accounts funded by writing token storage, dev wallets in the app. `e2e-fork.sh` and `ui.e2e.ts` drive it automatically.
 
 ## 2. Design trade-offs (what we chose, what it costs)
 
