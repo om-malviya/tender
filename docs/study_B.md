@@ -1,7 +1,7 @@
 # Study guide for Project B (Tender)
 
 > **For:** you, Person 2. You know roughly how a blockchain works and need to present Tender to sponsor judges alone and answer their questions.
-> **Budget:** about 7.5 hours over 9 modules. If you only have about 3.5 hours, do the **minimum path**: Modules 1, 3, 4 and 8.
+> **Budget:** about 8.5 hours. **Start with PART A** (the differences from Universal Router, 0x and Coinbase Commerce, and how each is built): it is the core of the presentation. If you only have about 4.5 hours, do PART A plus the **minimum path**: Modules 1, 3, 4 and 8.
 > **How to use each module:**
 > 1. Read the explanation.
 > 2. Skim the links if you want more depth.
@@ -11,6 +11,7 @@
 > This file grows during the build. Each time we write a file, a **Build log** entry at the bottom points to the exact lines worth reading (`file:line`), explains what they do and why, and lists what a judge may ask about them. Read the Build log with the code open next to it.
 
 ## Progress tracker
+- [ ] **PART A: the differences and how they're built (60 min) [read first; it's the presentation]**
 - [ ] Module 0: Blockchain refresher (20 min)
 - [ ] Module 1: Tokens, approvals, permits (60 min) **[minimum path]**
 - [ ] Module 2: Solidity + Foundry (90 min)
@@ -20,6 +21,217 @@
 - [ ] Module 6: Hedera + x402 + agents (45 min)
 - [ ] Module 7: Frontend glue: wallets, viem, signing (30 min)
 - [ ] Module 8: Pitch drill (30 min) **[minimum path]**
+
+---
+
+## PART A (read this first): how Tender differs from Universal Router, 0x and Coinbase Commerce, and how we built each difference
+
+> **This is the main part of the guide and of your presentation.** The modules after it are background, so read them when a difference below uses a term you don't know. For each difference: what the others do, what Tender does, **how it's built** (click the links with the code open), **what proves it** (tests + live transactions), the sentence to say, and the question a judge will ask.
+>
+> **The three competitors in one line each**
+> - **Uniswap Universal Router:** a general swap executor. You give it commands and a path; it swaps. No invoices, no merchant, no ranking.
+> - **0x Swap-and-Send:** a swap API whose output goes to a `recipient`. 0x picks the route on its server; the recipient gets *whatever the swap produced*.
+> - **Coinbase Commerce Onchain Payment Protocol (OPP):** "transfer intents" that an **operator** (Coinbase) signs; the payer's swap goes through Coinbase's transfers contract (Uniswap v3). Hosted checkout.
+>
+> **Status of every proof below (Nov 6):** 44 Solidity checks + 51 TypeScript tests pass; both end-to-end fork flows pass; Unichain and Whitechain are live with real transactions. Hedera's live run is waiting on testnet accounts.
+
+### The differences at a glance
+
+| # | Difference | Universal Router | 0x | Coinbase OPP | Proof |
+|---|---|---|---|---|---|
+| D1 | **The pool itself settles the invoice** (CheckoutHook): any router can pay | no | no | no | 10 tests + [live tx](https://unichain-sepolia.blockscout.com/tx/0x5445265c0fdbb79c5afc4f745dd9d1b3df5418584ad471f6389fb424cec857a8) |
+| D2 | **Merchant gets exactly the invoice; payer gets the leftover in the same tx** | not its job | recipient gets "whatever came out" | yes (v3, via operator) | fuzz + invariants + [live tx](https://unichain-sepolia.blockscout.com/tx/0x7dc679a80d3a49daa3f96a6d2e80f96af9efc23df5592d6a671af78da9f52fe9) |
+| D3 | **No router, no operator, no admin**: v4 PoolManager directly | router + Permit2 | 0x server + settler | operator signature | 5 access tests |
+| D4 | **Basket**: one invoice from several tokens in one tx | no | no | no | 3 + 4 tests + fork run |
+| D5 | **Every route shown with its true cost**, payer chooses | no routing | one opaque quote | caller picks a v3 pool | 16 tests + live ranking |
+| D6 | **Slippage buffer sized from measured impact; split routing** | caller sets it | server-side | flat | 4 tests + live numbers |
+| D7 | **Vetted pools only** (refuses broken pools) | trusts caller | trusts server | trusts caller | 4 tests |
+| D8 | **On-chain invoice lifecycle with refunds to the original payer** | no | no | one-shot intents | 15 tests + 4 invariants + [refund](https://explorer.testnet.whitechain.io/tx/0x798631d466d2c2c43662b1ba7eade7f36ca9404b32ce5204b95a234f7d8dd710) |
+| D9 | **Merchant back office**: history, refunds, CSV across rails | no | no | hosted dashboard only | 8 tests + fork runs |
+| D10 | **Self-hostable 23-line widget**, public contracts only | n/a | n/a | hosted by Coinbase | 3 tests + browser run |
+| D11 | **Sells to AI agents** (x402 on Hedera) with spending controls and an HCS audit log | no | no | no | 16 tests (live run pending) |
+| D12 | **One merchant, three chains, one ledger**, reproducible on a laptop | single chain | per chain | per chain | 2 fork flows + 2 live chains |
+
+---
+
+### D1. The pool itself settles the invoice (CheckoutHook)
+**They:** payment logic lives in a router or a transfers contract. The payer's wallet must call *that* contract.
+**Tender:** payment logic lives **in the pool**. A Uniswap v4 hook on our pools settles an invoice during any swap that carries `hookData = (invoiceId, payer)`. Any router, wallet or aggregator that forwards hook data can pay; our checkout contract never has to be called.
+
+**How it's built**
+1. [CheckoutHook.sol L63–89](tender/contracts/src/CheckoutHook.sol#L63-L89) `afterSwap`, which v4 calls after every swap in the pool:
+   - [CheckoutHook.sol L71](tender/contracts/src/CheckoutHook.sol#L71): exact-input swaps only. v4 lets a hook change only the *unspecified* side, which is the output only for exact-input swaps.
+   - [CheckoutHook.sol L84](tender/contracts/src/CheckoutHook.sol#L84): the output must cover the invoice, or the whole swap reverts (`Underpaid`).
+   - [CheckoutHook.sol L87](tender/contracts/src/CheckoutHook.sol#L87): `take` exactly the invoice amount **straight to the merchant**. The rest of the output stays with the swapper as change.
+2. [CheckoutCore.sol L158–166](tender/contracts/src/CheckoutCore.sol#L158-L166) `settleFromHook`: marks the invoice Paid. **Only the hook** may call it.
+3. Hook addresses must encode their permissions (v4 rule), so the deploy script **mines a CREATE2 salt** until the address ends in the right bits ([DeployUnichain.s.sol](tender/contracts/script/DeployUnichain.s.sol)).
+4. Off-chain: [paths.ts L44](tender/packages/core/src/paths.ts#L44) `hookedPaths` finds hooked pools; [routers.ts L58](tender/packages/core/src/routers.ts#L58) `hookSwapArgs` builds the swap any router can send.
+
+**Proof**
+- 10 tests in [CheckoutHook.t.sol](tender/contracts/test/CheckoutHook.t.sol), all through **Uniswap's own `PoolSwapTest` router**: merchant gets exact, swapper gets the rest; no hook data → ordinary swap; wrong token, underpay, exact-output, already-paid, non-PoolManager callers refused.
+- Live: invoice #2 on Unichain Sepolia paid through Uniswap's router, [tx](https://unichain-sepolia.blockscout.com/tx/0x5445265c0fdbb79c5afc4f745dd9d1b3df5418584ad471f6389fb424cec857a8).
+
+**Say it:** "Tender turns the liquidity pool into the payment terminal: any router that swaps through it pays the invoice."
+**Judge:** "Why exact-input only?" → "v4 lets a hook adjust only the unspecified currency. In an exact-input swap that's the output, so the hook can carve the invoice out of it. It's a v4 rule, and we wrote it up in FEEDBACK.md."
+
+---
+
+### D2. The merchant gets exactly the invoice; the payer gets the leftover, in the same transaction
+**0x:** the recipient gets whatever the swap produced. **Universal Router:** no such guarantee; it's a convention for the caller.
+**Tender:** an **exact-output** swap: the merchant receives *exactly* the invoice amount, the unused input goes back to the payer, and the contract **asserts** both before finishing.
+
+**How it's built**
+1. [UniswapCheckout.sol L80–96](tender/contracts/src/UniswapCheckout.sol#L80-L96) `payWithToken(id, tokenIn, maxAmountIn, path, deadline)`: `maxAmountIn` is the payer's price cap.
+2. [UniswapCheckout.sol L239–256](tender/contracts/src/UniswapCheckout.sol#L239-L256) inside the PoolManager's `unlock`: walk the hops **backwards** with exact output; [UniswapCheckout.sol L251](tender/contracts/src/UniswapCheckout.sol#L251) revert `TooExpensive` if it needs more than the cap; [UniswapCheckout.sol L254](tender/contracts/src/UniswapCheckout.sol#L254) `take` the USDC **straight to the merchant**.
+3. [UniswapCheckout.sol L106–133](tender/contracts/src/UniswapCheckout.sol#L106-L133) `_payExactOut` snapshots balances first; [UniswapCheckout.sol L131–132](tender/contracts/src/UniswapCheckout.sol#L131-L132) reverts if the contract's balances changed (`InvariantBroken`): it can never keep tokens.
+
+**Proof**
+- `testFuzz_payWithToken_exactAmountForAnyInvoice` (1,000 random amounts), single-hop and two-hop exact-amount tests, `test_revert_maxTooLow_invoiceStaysOpen_payerKeepsFunds` ([UniswapCheckout.t.sol](tender/contracts/test/UniswapCheckout.t.sol)).
+- Invariant `invariant_checkoutHoldsNothing` over 256 random runs × 64 calls ([Invariants.t.sol](tender/contracts/test/Invariants.t.sol)).
+- Live: [tx](https://unichain-sepolia.blockscout.com/tx/0x7dc679a80d3a49daa3f96a6d2e80f96af9efc23df5592d6a671af78da9f52fe9). Checked after sending: the merchant's USDC went up by exactly 100000 (0.10 USDC), and the contract holds 0.
+
+**Say it:** "The merchant gets exactly the invoice, not roughly, and the contract proves it before the transaction can finish."
+**Judge:** "What if the price moves between quote and payment?" → "The payer's cap `maxAmountIn` bounds the cost. If the price moved past it, the transaction reverts and nothing is paid; the invoice stays open."
+
+---
+
+### D3. No router, no operator, no admin
+**Universal Router:** a router plus Permit2 allowances in the middle. **Coinbase OPP:** every payment needs an **operator's signature**. **0x:** server plus settler contract.
+**Tender:** our contract talks to the **v4 PoolManager directly** (flash accounting: `unlock` → swap → `settle` → `take`). No owner, no pause, no upgrade, no operator.
+
+**How it's built**
+- [UniswapCheckout.sol L229–234](tender/contracts/src/UniswapCheckout.sol#L229-L234) `unlockCallback`: only the PoolManager may call it.
+- [UniswapCheckout.sol L311–322](tender/contracts/src/UniswapCheckout.sol#L311-L322) `_poolKey`: our own payment path uses only hook-free pools (`hooks = address(0)`).
+- No `owner`, `onlyOwner`, `pause` or proxy anywhere in [contracts/src](tender/contracts/src).
+
+**Proof:** `test_revert_unlockCallback_onlyPoolManager`, `test_revert_afterSwap_onlyPoolManager`, `test_revert_settleFromHook_onlyHook`, `test_revert_strangerCannotRefundOrCancel`, `test_revert_cancelAfterPaid`.
+**Say it:** "Nobody, us included, can pause, upgrade, or redirect a payment."
+**Judge:** "Why not just use the Universal Router?" → "It would put a router and Permit2 allowances between the payer and the merchant, and it gives no merchant guarantee. Going straight to the PoolManager lets us assert 'merchant got exactly X' in the same transaction."
+
+---
+
+### D4. Basket: one invoice from several tokens in one transaction
+**None of the three** can do this. Each pays from one input token.
+**Tender:** pay a $10 invoice with $4 of USDC + leftover DEMO + some WETH, in **one** transaction. Each swapped leg has a minimum output; the merchant still gets exactly the invoice, and any surplus goes back to the payer.
+
+**How it's built**
+1. [UniswapCheckout.sol L142–156](tender/contracts/src/UniswapCheckout.sol#L142-L156) `payWithBasket`; [UniswapCheckout.sol L259–279](tender/contracts/src/UniswapCheckout.sol#L259-L279) runs the legs in order inside one `unlock`, each checked against its `minOut` (`LegBelowMin`).
+2. [UniswapCheckout.sol L200–208](tender/contracts/src/UniswapCheckout.sol#L200-L208) pays the merchant exactly the amount, returns the excess, and asserts the merchant's delta.
+3. Planner [basket.ts L33](tender/packages/core/src/basket.ts#L33) `buildBasket`: USDC first, then the cheapest tokens. [basket.ts L101](tender/packages/core/src/basket.ts#L101) `marginalOut` quotes legs that **share a pool** against each other's price impact. That was added today, after the end-to-end run caught the bug (B28).
+
+**Proof**
+- Solidity: `test_basket_coversInvoice_andReturnsExcess`, `test_basket_revert_legBelowMin`, `test_basket_revert_underpaid`.
+- TypeScript: 4 `buildBasket` tests, including the shared-pool replay on a stateful AMM.
+- Fork end-to-end: a three-leg basket (USDC + WETH + DEMO) paid exactly 1.00 USDC.
+
+**Say it:** "Spend your wallet's dust: one invoice, several tokens, one transaction."
+**Judge:** "What if two tokens route through the same pool?" → "The planner prices the second leg after the first one's impact, and each leg has an on-chain minimum. If prices still move, the whole thing reverts; nothing is paid wrongly."
+
+---
+
+### D5. Every route shown with its true cost; the payer chooses
+**0x:** routing happens on 0x's server; the payer sees one quote. **Universal Router / OPP:** no routing at all; the caller brings the path or the pool.
+**Tender:** the ranking panel shows **every** route: direct USDC, every plain v4 path, hooked pools, the Uniswap Trading API, and split routes, each with input, fees + impact, gas and total cost. The cheapest is pre-selected.
+
+**How it's built:** [rank.ts L86](tender/packages/core/src/rank.ts#L86) `rankRoutes`:
+1. [rank.ts L100](tender/packages/core/src/rank.ts#L100) read the invoice.
+2. [rank.ts L111](tender/packages/core/src/rank.ts#L111) read the payer's balances in one Multicall3 call.
+3. [rank.ts L124](tender/packages/core/src/rank.ts#L124) quote every candidate route; quotes in the same tick are batched into one RPC call ([quoter.ts L74](tender/packages/core/src/quoter.ts#L74)).
+4. [rank.ts L250](tender/packages/core/src/rank.ts#L250) turn it all into USD, measure impact, size buffers, and rank.
+
+**Proof:** 9 ranking tests (two-hop beats thin direct, unaffordable routes skipped, direct USDC offered, unpayable invoices refused, hook and split routes), 3 quoter-batching tests, 4 Trading-API parser tests. Live ranking on the real pools for a 0.10 USDC invoice: hooked 0.47%, split 1.00%, two-hop 2.78%, thin direct 12.84%.
+**Say it:** "You see every way to pay and what each really costs, before you sign."
+**Judge:** "Why not just call the Trading API?" → "We do, when there's a key. It's one source among several, and it only quotes pools it indexes. Our own pools come from the on-chain Quoter, so the panel shows both, labelled by source."
+
+---
+
+### D6. A slippage buffer sized from measured impact, plus split routing
+**Others:** a flat slippage percentage, or one chosen fee tier.
+**Tender:** each route's buffer = 0.25% + half its measured price impact, capped at 3%. A thin pool gets a bigger cushion and a deep pool a tiny one. When splitting the trade across two paths beats the best single path, a **split route** is offered (executed as a basket).
+
+**How it's built:** [rank.ts L70](tender/packages/core/src/rank.ts#L70) `bufferForImpact`; [rank.ts L258](tender/packages/core/src/rank.ts#L258) impact measured per route; [rank.ts L212–224](tender/packages/core/src/rank.ts#L212-L224) split shown only if it beats the best single path by more than 0.05%.
+**Proof:** `bufferForImpact: floor 0.25%, half the impact on top, cap 3%`, `a fixed slippage overrides the impact-based buffer`, `rounds the slippage buffer UP`, `adds a split route when splitting … beats the best single path`.
+**Say it:** "The cushion fits the pool: tight on deep pools, wider on thin ones."
+
+---
+
+### D7. Vetted pools only
+**Others** trust whatever pool the caller or server picks.
+**Tender:** the ranker only routes through an **allowlist** of pools. On the real testnet we found a WETH/USDC 0.30% pool pricing WETH absurdly, so it must never be used.
+
+**How it's built:** [config.ts L82–92](tender/packages/core/src/config.ts#L82-L92) the allowlist (our seeded pools, plain and hooked); [paths.ts L29–41](tender/packages/core/src/paths.ts#L29-L41) `candidatePaths` keeps only allowlisted plain pools; [paths.ts L44–49](tender/packages/core/src/paths.ts#L44-L49) `hookedPaths` only hooked ones.
+**Proof:** 4 tests: only vetted pools routed; the wrong fee tier or tick spacing refused; hooked and plain kept apart; **the ranker never even quotes an unvetted pool** (a spy quoter records every call). Switching the allowlist off makes all four fail.
+**Say it:** "We only route through pools we've checked, because testnets and real chains both have broken ones."
+
+---
+
+### D8. An on-chain invoice lifecycle, with refunds to the original payer
+**None of the three** keeps invoices on-chain. Coinbase OPP has one-shot intents signed by its operator.
+**Tender:** `CheckoutCore` is a small state machine: Open → Paid (or Cancelled / Expired), with **partial refunds** that always go to the original payer and can never exceed what was paid. It's the same contract on both chains.
+
+**How it's built:**
+- [CheckoutCore.sol L87](tender/contracts/src/CheckoutCore.sol#L87) `createInvoice` (settle token must be allowlisted).
+- [CheckoutCore.sol L111–121](tender/contracts/src/CheckoutCore.sol#L111-L121) `refund`: [CheckoutCore.sol L116](tender/contracts/src/CheckoutCore.sol#L116) never more than paid; [CheckoutCore.sol L119](tender/contracts/src/CheckoutCore.sol#L119) pulled from the merchant **to `inv.payer`**.
+- [CheckoutCore.sol L124](tender/contracts/src/CheckoutCore.sol#L124) `cancel`.
+- [CheckoutCore.sol L145–149](tender/contracts/src/CheckoutCore.sol#L145-L149) `payInvoiceWithPermit`: one signature, one transaction.
+
+**Proof:**
+- 15 tests in [CheckoutCore.t.sol](tender/contracts/test/CheckoutCore.t.sol): full lifecycle, every revert path, `testFuzz_refundsNeverExceedAmount`.
+- 4 invariants (refunds never exceed the amount, a refund implies a payment, merchant balances match the books, the contract holds nothing).
+- Live on Whitechain: [payment](https://explorer.testnet.whitechain.io/tx/0x41485818a21c88008ffbdee188c142278a0d2686068e65e707a25e53a655de64), [0.40 refund](https://explorer.testnet.whitechain.io/tx/0x798631d466d2c2c43662b1ba7eade7f36ca9404b32ce5204b95a234f7d8dd710), [permit payment](https://explorer.testnet.whitechain.io/tx/0x9620ce57304e80ec33ca18143560688409e5f4793a121ad7b62aa791c576ccf1).
+
+**Say it:** "Invoices, payments and refunds all live on-chain, and a refund can only go back to whoever paid."
+
+---
+
+### D9. A merchant back office: history, refunds and CSV across rails
+**They** ship swap tools; the merchant builds the rest (Coinbase has a hosted dashboard, but only for its own rail).
+**Tender:** a dashboard that rebuilds every invoice from **contract events** (no database), one-click refunds, and an **accountant CSV** that mixes Unichain, Whitechain and Hedera rows.
+
+**How it's built:** [invoices.ts L63](tender/packages/core/src/invoices.ts#L63) `listInvoices` (event scan in chunks sized to each chain's RPC limit); [csv.ts L29](tender/packages/core/src/csv.ts#L29) `toCsv` and [csv.ts L35](tender/packages/core/src/csv.ts#L35) `invoiceRows`; the Hedera sales come from the public mirror node ([hedera.ts](tender/packages/core/src/hedera.ts)).
+**Proof:** 3 mirror-node + CSV tests, 5 API tests, and both fork flows end with "dashboard sees N invoices; CSV export". The browser run refunds from the Merchant page.
+**Say it:** "Everything the accountant needs comes from the chain itself: no database to trust."
+
+---
+
+### D10. A self-hostable widget that talks only to public contracts
+**Coinbase Commerce:** checkout hosted by Coinbase, gated by its operator.
+**Tender:** a merchant adds [tender.js](tender/app/public/tender.js) to their site; it opens the pay page and accepts the "paid" message **only from Tender's own origin**. The shop then confirms on-chain itself. The demo shop's whole integration is **23 lines** ([index.html](tender/demo-shop/public/index.html)).
+**Proof:** 3 shop tests (manifest, create-invoice token + rate limit, clear errors) and the browser run: landing → shop → checkout → pay → shop confirms.
+**Say it:** "Twenty-three lines on any website, and nothing hosted by us is trusted for the payment."
+
+---
+
+### D11. Sells to AI agents: x402 on Hedera, with spending controls and an audit log
+**None of the three** sells to agents.
+**Tender:** the same merchant sells data per request over **HTTP 402** (x402), settled in **HTS USDC on Hedera**. Our agent finds the endpoint, checks its **spending policy** against the real price, pays with no human involved, and writes every decision, bought or refused, to a **Hedera Consensus Service topic** that anyone can read.
+
+**How it's built:**
+- [app.ts L45](tender/demo-shop/server/app.ts#L45) `paymentMiddleware` on the shop's endpoint.
+- [policy.ts L30](tender/agent/src/policy.ts#L30) `decide`: allowlist, per-merchant cap, total budget, human approval above a threshold.
+- [run.ts L68](tender/agent/src/run.ts#L68) the policy runs on the **real 402 price tag** right before signing.
+- [run.ts L30](tender/agent/src/run.ts#L30) `audit` writes to the HCS topic.
+
+**Proof:** 6 policy tests, 4 HCS tests, 3 audit-API tests, 3 shop tests. **Live run pending:** it needs the Hedera testnet accounts (next step).
+**Say it:** "An agent is just another customer: it pays per request, inside a budget, and every decision is publicly logged."
+
+---
+
+### D12. One merchant, three chains, one ledger, reproducible on a laptop
+**They** are single-chain tools.
+**Tender:** the same `CheckoutCore` runs on Unichain and Whitechain (same address, `0x013a…5795`), Hedera sales join the same dashboard, and the whole stack (two forked chains, API, shop, app) starts with one command.
+**How it's built:** [config.ts](tender/packages/core/src/config.ts) `loadChains` describes each rail; [fork-up.sh](tender/scripts/fork-up.sh), [e2e-fork.sh](tender/scripts/e2e-fork.sh); the deploy runbooks are rehearsed on forks of the live chains before every real run.
+**Proof:** both fork flows pass; Unichain and Whitechain are live.
+**Say it:** "One merchant, one ledger, whichever chain the customer is on."
+
+---
+
+### Your 60-second pitch, built from the differences
+1. **Problem (10 s):** "You hold the wrong token for a checkout. Swap tools exist, but none gives the merchant an exact amount, an invoice, or a refund."
+2. **D2 + D5 (15 s):** "Tender shows every route's true cost, swaps with exact output, and the merchant gets exactly the invoice, proven on-chain."
+3. **D1 (15 s):** "And the pool itself can settle invoices: any router pays. Here it is, paid through Uniswap's own router."
+4. **D4 + D8 (10 s):** "Pay from several tokens at once; refunds go back on-chain to whoever paid."
+5. **D11 + D12 (10 s):** "The same merchant takes USDT on Whitechain and sells to AI agents on Hedera, all in one ledger."
 
 ---
 
