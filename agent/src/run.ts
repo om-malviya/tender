@@ -28,11 +28,11 @@ let ledger = loadLedger(ledgerPath);
  * the ledger. Each message is a small JSON record; the mirror node and HashScan show them in consensus order.
  */
 async function audit(hedera: Client, record: Record<string, unknown>) {
-  let topicId = process.env.HCS_TOPIC_ID ?? (ledger as { topicId?: string }).topicId;
+  let topicId = process.env.HCS_TOPIC_ID ?? ledger.topicId;
   if (!topicId) {
     const receipt = await (await new TopicCreateTransaction().setTopicMemo("Tender agent spending audit log").execute(hedera)).getReceipt(hedera);
     topicId = receipt.topicId!.toString();
-    (ledger as { topicId?: string }).topicId = topicId;
+    ledger.topicId = topicId;
     saveLedger(ledgerPath, ledger);
     console.log(`agent: created audit topic ${topicId}  https://hashscan.io/testnet/topic/${topicId}`);
   }
@@ -63,8 +63,15 @@ async function main() {
 
   // 2-3. pay with x402. The policy runs on the REAL 402 requirements, right before signing.
   let paidUsd = 0;
-  const client = new x402Client()
-    .register("hedera:*", new ExactHederaScheme(createClientHederaSigner(accountId, privateKey, { network: "hedera:testnet" })))
+  // The x402 library has its own guard: it only pays in default assets (USDC) unless others are listed.
+  // HBAR is listed only when our policy names an HBAR rate, capped per payment at the policy's
+  // human-approval limit converted to tinybars, so the library enforces the same ceiling as the policy.
+  const hbarCap = policy.hbarUsd ? String(Math.floor((policy.humanApprovalAbove / policy.hbarUsd) * 1e8)) : undefined;
+  const client = x402Client
+    .fromConfig({
+      schemes: [{ network: "hedera:*", client: new ExactHederaScheme(createClientHederaSigner(accountId, privateKey, { network: "hedera:testnet" })) }],
+      spendControls: hbarCap ? { allowedAssets: [{ network: "hedera:testnet", asset: "0.0.0", maxAmountPerPayment: hbarCap }] } : undefined,
+    })
     .onBeforePaymentCreation(async ({ selectedRequirements: req }) => {
       const amountUsd = requirementToUsd(req, undefined, policy.hbarUsd);
       const decision = decide(policy, ledger, { merchant, amountUsd });
@@ -96,7 +103,11 @@ async function main() {
   console.log(JSON.stringify(await res.json(), null, 2));
 }
 
-main().catch((e) => {
-  console.error(`agent: ${e instanceof Error ? e.message : e}`);
-  process.exitCode = 1;
-});
+main()
+  .catch((e) => {
+    console.error(`agent: ${e instanceof Error ? e.message : e}`);
+    process.exitCode = 1;
+  })
+  // The Hedera SDK keeps gRPC connections open, which would keep the process alive forever. Everything is
+  // awaited inside main(), so exiting here cuts nothing short.
+  .finally(() => process.exit(process.exitCode ?? 0));

@@ -59,4 +59,11 @@ describe("agent spending policy", () => {
     }
     expect(decide(hbarPolicy, ledger, { merchant: shop, amountUsd: usd })).toMatchObject({ allow: false });
   });
+
+  it("recording a purchase keeps the audit topic, so every decision lands in ONE log", () => {
+    const withTopic = { ...emptyLedger(), topicId: "0.0.4242" };
+    const after = recordSpend(withTopic, { at: "t", merchant: shop, amountUsd: 0.05, txId: "tx1" });
+    expect(after.topicId).toBe("0.0.4242");
+    expect(recordSpend(after, { at: "t", merchant: shop, amountUsd: 0.05, txId: "tx2" }).topicId).toBe("0.0.4242");
+  });
 });

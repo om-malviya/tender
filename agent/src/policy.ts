@@ -22,6 +22,8 @@ export interface LedgerEntry {
 }
 export interface Ledger {
   totalUsd: number;
+  /** the HCS audit topic this agent logs to (created on its first run) */
+  topicId?: string;
   perMerchant: Record<string, number>;
   entries: LedgerEntry[];
 }
@@ -66,6 +68,7 @@ export function loadLedger(path: string): Ledger {
 
 export function recordSpend(ledger: Ledger, entry: LedgerEntry): Ledger {
   return {
+    ...ledger, // keeps the audit topic id: losing it would split the log across topics
     totalUsd: ledger.totalUsd + entry.amountUsd,
     perMerchant: { ...ledger.perMerchant, [entry.merchant]: (ledger.perMerchant[entry.merchant] ?? 0) + entry.amountUsd },
     entries: [...ledger.entries, entry],
