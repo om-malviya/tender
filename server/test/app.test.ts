@@ -100,3 +100,31 @@ describe("Chai & Code shop", () => {
     expect(res.status).toBe(503);
   });
 });
+
+describe("Hedera audit log API", () => {
+  const entries = [{ sequence: 2, consensusAt: 1730700050, payer: "0.0.5", body: { kind: "refused", reason: "over budget" }, raw: "{}" }];
+  const withAudit = createApp({
+    chains,
+    clientFor: () => fakeClient,
+    quoterFor: () => noQuotes,
+    listHederaSales: async () => sales,
+    listAuditLog: async (topic) => (topic === "0.0.4242" ? entries : []),
+  });
+
+  it("rejects a malformed topic id", async () => {
+    expect((await withAudit.request("/api/hedera/audit?topic=bob")).status).toBe(400);
+    expect((await withAudit.request("/api/hedera/audit")).status).toBe(400);
+  });
+
+  it("returns the topic's entries from the mirror reader", async () => {
+    const res = await withAudit.request("/api/hedera/audit?topic=0.0.4242");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ entries });
+  });
+
+  it("returns an empty log when no mirror reader is configured", async () => {
+    const res = await app.request("/api/hedera/audit?topic=0.0.4242");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ entries: [] });
+  });
+});

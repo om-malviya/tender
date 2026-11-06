@@ -66,7 +66,7 @@ Full walkthrough, design trade-offs and backlog: [`docs/ARCHITECTURE.md`](docs/A
 ```bash
 npm install
 cd contracts && forge install && forge test && cd ..     # 41 Solidity tests, incl. a real v4 PoolManager
-npx vitest run                                            # 37 TypeScript tests
+npx vitest run                                            # 47 TypeScript tests
 bash scripts/e2e-fork.sh                                  # end-to-end on local copies of Unichain + Whitechain
 bash scripts/dev-fork.sh                                  # the whole product: http://localhost:5173 and :8788
 ```
@@ -77,9 +77,31 @@ Deploy for real: `.env.example` lists every variable; scripts are `contracts/scr
 
 ## Tests
 
-- **Foundry (41):** unit tests for every revert path, fuzz (1,000 runs), invariants (256 runs × 64 calls), swap tests against a real v4 PoolManager deployed in the test, hook tests through Uniswap's own router.
-- **Vitest (35):** ranker, basket, Trading API parser, CSV, Hedera parsing, API, shop guards, agent policy.
-- **End-to-end:** `e2e/fork.e2e.ts` (Unichain: invoice → ranking → swap payment → hook payment → basket → refund → CSV), `e2e/whitechain.e2e.ts` (USDT: approve+pay, permit pay, refund, CSV), `e2e/ui.e2e.ts` (headless browser: landing → shop → checkout → pay → shop confirms → Whitechain → merchant refund).
+Every category has at least three independent checks, so a pass isn't a coincidence. **88 automated tests** (41 Foundry + 47 Vitest), plus end-to-end runs and the live testnet proofs above.
+
+| Category | Sponsor | Checks | What they prove | File |
+|---|---|---|---|---|
+| Invoice lifecycle | Whitechain | 15 | create / pay / permit-pay / refund / cancel, every revert path (expired, paid twice, not merchant, over-refund, wrong token) | `contracts/test/CheckoutCore.t.sol` |
+| Any-token payment | Uniswap | 15 | exact-output swaps on a real v4 PoolManager: merchant gets exactly the amount for any invoice (fuzz, 1,000 runs), payer keeps the rest; 1- and 2-hop; baskets; a too-low max leaves the invoice open and the payer's funds untouched; deadline, expiry, bad path, missing pool, paying twice and non-PoolManager callbacks all refused; the 2-hop route beats a thin direct pool | `contracts/test/UniswapCheckout.t.sol` |
+| CheckoutHook | Uniswap | 10 | invoices settled from inside Uniswap's own router (merchant gets exact, payer the rest); swaps without hook data stay ordinary; wrong token, underpay, exact-output, already-paid, and callers other than the PoolManager / hook all refused; hook sits at a valid v4 permission address | `contracts/test/CheckoutHook.t.sol` |
+| Invariants | all | 4 | over 256 random runs × 64 calls: the contract holds nothing, merchant balances match the books, a refund implies a payment, refunds never exceed the amount | `contracts/test/Invariants.t.sol` |
+| Route ranking | Uniswap | 9 | direct / quoter / hooked / split routes ranked by true cost; impact-sized buffers; split shown only when it wins | `packages/core/test/core.test.ts` |
+| Route paths | Uniswap | 4 | candidate paths and v4 PathKey encoding for exact-in and exact-out | `packages/core/test/core.test.ts` |
+| Basket builder | Uniswap | 3 | greedy legs always cover the invoice with guaranteed minimum outputs | `packages/core/test/core.test.ts` |
+| Quoter batching | Uniswap | 3 | same-tick quotes → one Multicall3 call; separate ticks → separate batches; per-quote fallback when Multicall3 fails | `packages/core/test/core.test.ts` |
+| Trading API parser | Uniswap | 4 | executable v4 routes vs v3 / hooked / split (shown, not executed); multi-hop order; malformed quotes rejected | `packages/core/test/core.test.ts` |
+| Mirror node + CSV | Hedera, Whitechain | 3 | Hedera sales parsed from the mirror node; CSV export escapes and labels correctly | `packages/core/test/core.test.ts` |
+| HCS audit log | Hedera | 4 | topic messages decoded newest-first; right mirror URL; errors surfaced; empty topics | `packages/core/test/core.test.ts` |
+| Agent spending policy | Hedera | 6 | allowlist, per-merchant cap, total budget, human approval threshold, applied to the real 402 price | `agent/test/policy.test.ts` |
+| Tender API | all | 5 | ranking endpoint, input validation, invoice reads, chains without a deployment refused | `server/test/app.test.ts` |
+| Audit log API | Hedera | 3 | malformed topic ids → 400; entries returned; empty when not configured | `server/test/app.test.ts` |
+| Demo shop | Whitechain, Hedera | 3 | x402 paywall manifest, invoice-creation token and rate limit | `server/test/app.test.ts` |
+
+**Are the tests real?** We checked the newest ones by breaking the code on purpose: wrong mirror-node ordering, a quoter that never clears its queue, no Multicall3 fallback, swallowed mirror errors, unvalidated topic ids, a lost split-route label. Every one of those bugs made a test fail.
+
+**End-to-end** (local forks of the real testnets): `e2e/fork.e2e.ts` (Unichain: invoice → ranking → swap payment → hook payment → basket → refund → CSV), `e2e/whitechain.e2e.ts` (USDT: approve+pay, permit pay, refund, CSV), `e2e/ui.e2e.ts` (headless browser: landing → shop → checkout → pay → shop confirms → Whitechain → merchant refund). The deploy runbooks (`scripts/deploy-*.sh`) are rehearsed on forks before every real run.
+
+**Live** (Unichain Sepolia, Nov 6): both proof payments checked on-chain after sending: merchant received exactly 0.10 USDC, invoices marked Paid, checkout and hook hold 0 tokens. See the table at the top.
 
 Gas (from `forge test --gas-report`): `payWithToken` ~200k (1 hop) / ~250k (2 hops); basket ~130k per leg; hook swap ~180k; `createInvoice` ~147k.
 

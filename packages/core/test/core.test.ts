@@ -10,6 +10,7 @@ import {
   onchainQuoter,
   parseMirrorSales,
   parseTopicMessages,
+  listAuditLog,
   parseTradingApiQuote,
   bufferForImpact,
   encodeHookData,
@@ -301,6 +302,33 @@ describe("Trading API parser", () => {
     ).toBeNull();
     expect(parseTradingApiQuote({ error: "No quotes available" })).toBeNull();
   });
+
+  it("keeps a multi-hop v4 route in order, with its label, impact and gas fee", () => {
+    const q = parseTradingApiQuote(
+      sample([
+        [
+          { type: "v4-pool", tokenIn: { address: DEMO }, tokenOut: { address: WETH }, fee: "3000", tickSpacing: "60", hooks: zeroAddress },
+          { type: "v4-pool", tokenIn: { address: WETH }, tokenOut: { address: USDC }, fee: "500", tickSpacing: "10", hooks: zeroAddress },
+        ],
+      ]),
+    )!;
+    expect(q.hops).toEqual([
+      { tokenIn: DEMO, fee: 3000, tickSpacing: 60 },
+      { tokenIn: WETH, fee: 500, tickSpacing: 10 },
+    ]);
+    expect(q.protocols).toBe("v4 > v4");
+    expect(q.priceImpactPct).toBe(0.02);
+    expect(q.gasFeeUsd).toBe(0.01);
+  });
+
+  it("labels split routes as non-executable and rejects quotes without an input amount", () => {
+    const pool = { type: "v4-pool", tokenIn: { address: WETH }, fee: "500", tickSpacing: "10", hooks: zeroAddress };
+    const split = parseTradingApiQuote(sample([[pool], [pool]]))!;
+    expect(split.hops).toBeNull();
+    expect(split.protocols).toBe("split across 2 routes");
+    expect(parseTradingApiQuote({ quote: { route: [[pool]] } })).toBeNull(); // no input.amount
+    expect(parseTradingApiQuote({ quote: { input: { amount: "" }, route: [[pool]] } })).toBeNull();
+  });
 });
 
 describe("Hedera mirror node + CSV", () => {
@@ -355,6 +383,29 @@ describe("HCS audit log", () => {
     expect(entries[0]!.body).toBeNull();
     expect(entries[0]!.raw).toBe("not json");
   });
+
+  it("asks the mirror node for the right topic, newest first, with a limit", async () => {
+    let asked: URL | undefined;
+    const fetchImpl = (async (u: URL) => {
+      asked = new URL(String(u));
+      return new Response(JSON.stringify({ messages: [] }));
+    }) as unknown as typeof fetch;
+    await listAuditLog({ topicId: "0.0.4242", limit: 7, mirrorUrl: "https://mirror.example", fetchImpl });
+    expect(asked!.origin + asked!.pathname).toBe("https://mirror.example/api/v1/topics/0.0.4242/messages");
+    expect(asked!.searchParams.get("order")).toBe("desc");
+    expect(asked!.searchParams.get("limit")).toBe("7");
+  });
+
+  it("raises a mirror-node error instead of showing an empty log", async () => {
+    const fetchImpl = (async () => new Response("down", { status: 503 })) as unknown as typeof fetch;
+    await expect(listAuditLog({ topicId: "0.0.4242", fetchImpl })).rejects.toThrow("mirror node 503");
+  });
+
+  it("returns an empty list for a topic with no messages (or no messages field)", () => {
+    expect(parseTopicMessages({ messages: [] })).toEqual([]);
+    expect(parseTopicMessages({})).toEqual([]);
+    expect(parseTopicMessages(null)).toEqual([]);
+  });
 });
 
 describe("onchainQuoter batching", () => {
@@ -382,5 +433,41 @@ describe("onchainQuoter batching", () => {
     // a lone call skips the multicall
     expect(await q.exactOut(hops, USDC, 1n)).toEqual({ amountIn: 7n, gas: 1n });
     expect(singles).toBe(1);
+  });
+
+  it("sends quotes from separate ticks as separate batches", async () => {
+    const batchSizes: number[] = [];
+    const client = {
+      multicall: async ({ contracts }: { contracts: unknown[] }) => {
+        batchSizes.push(contracts.length);
+        return contracts.map(() => ({ status: "success", result: [1n, 1n] }));
+      },
+      simulateContract: async () => ({ result: [1n, 1n] }),
+    } as unknown as PublicClient;
+    const q = onchainQuoter(client, "0x0000000000000000000000000000000000000001");
+    const hops: Hop[] = [{ tokenIn: WETH, fee: 500, tickSpacing: 10 }];
+    await Promise.all([q.exactOut(hops, USDC, 1n), q.exactOut(hops, USDC, 2n)]);
+    await Promise.all([q.exactOut(hops, USDC, 3n), q.exactOut(hops, USDC, 4n), q.exactOut(hops, USDC, 5n)]);
+    expect(batchSizes).toEqual([2, 3]);
+  });
+
+  it("falls back to one call per quote when Multicall3 fails, and a failing pool doesn't break the others", async () => {
+    let n = 0;
+    const client = {
+      multicall: async () => {
+        throw new Error("no multicall3 on this chain");
+      },
+      simulateContract: async () => {
+        n++;
+        if (n === 2) throw new Error("pool has no liquidity");
+        return { result: [BigInt(10 * n), 5n] };
+      },
+    } as unknown as PublicClient;
+    const q = onchainQuoter(client, "0x0000000000000000000000000000000000000001");
+    const hops: Hop[] = [{ tokenIn: WETH, fee: 500, tickSpacing: 10 }];
+    const res = await Promise.all([q.exactOut(hops, USDC, 1n), q.exactOut(hops, USDC, 2n), q.exactOut(hops, USDC, 3n)]);
+    expect(n).toBe(3);
+    expect(res.filter((r) => r === null)).toHaveLength(1);
+    expect(res.filter(Boolean)).toHaveLength(2);
   });
 });

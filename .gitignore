@@ -26,3 +26,5 @@ agent/ledger.json
 
 .env.deploy
 .wrangler/
+.vitest/
+contracts/broadcast/
