@@ -55,7 +55,7 @@
 | At most 3 partner prizes per submission [V] | Uniswap, Whitechain and Hedera fill all three. Project A uses ENS, Arkiv and World, so the two projects don't overlap. |
 | Built from scratch [V]: "all work on your project must begin after the hackathon officially starts" | **Team decision: build before kickoff** because of the conference clash; the team has told the organisers. Keep their confirmation in writing, and confirm which track this lets us enter. "Kickoff track" doesn't appear on the prize pages. Keep honest commit dates, and add a README "Build timeline" (what was built before the event, what was built during it). If the organisers say pre-built work can't enter the main prizes, enter the **Continuity** prizes instead: Uniswap ($5k, 4 × $1,250), Whitechain "Bring Your Product to Whitechain" ($3k, 2 × $1,500, needs proof of starting point + a "before and during" README section), Hedera Continuity ($1.5k, 2 × $750). |
 | AI use must be documented [V] | `AI_USAGE.md`: which tools, which parts, which decisions you made yourself. Commit the prompts and specs. **You must be able to explain every contract and function at the booth.** |
-| Demo video 2–4 minutes [V] | One video for all three sponsors. Whitechain wants 2–4 minutes and Hedera wants 5 or less, so 2–4 satisfies both. |
+| Demo videos [V] | **Updated Nov 7: four videos** cut from one recording session: one for ETHGlobal (2–4 min), one per sponsor (Uniswap ~3 min, Whitechain 2–4 min, Hedera ≤5 min). Each sponsor video centres on that sponsor and shows how its technology creates Tender's differences. Plan and scripts: `tender/docs/VIDEOS.md`. |
 | Each project separate [PDF] | Project B gets its own repo, demo and README, separate from Receipts. |
 
 ---
@@ -607,7 +607,7 @@ tender/
 
 ## 13. Demo
 
-### Video (target 3:30, must be 2:00–4:00)
+### Videos (updated Nov 7: four videos, see `tender/docs/VIDEOS.md`; the scene list below is the original single-video draft)
 | Time | On screen | Proves |
 |---|---|---|
 | 0:00 | "You hold DEMO and WETH. The store wants exactly 1.00 USDC." The shop's Buy button opens the Tender widget | The problem |

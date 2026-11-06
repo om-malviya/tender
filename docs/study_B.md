@@ -1666,3 +1666,20 @@ The **browser** version passes too ([ui.e2e.ts L95](tender/e2e/ui.e2e.ts#L95)): 
 **Judge questions**
 - "How did you test the frontend?" → "A script drives a real browser against the live testnets, checks every page at desktop and phone width against what the chains hold, then clicks every button and link: 178 checks. I also reviewed every demo screen by eye."
 - "What if many people open the dashboard at once?" → "The public Unichain RPC rate-limits event-log scans; we saw it in testing. The API retries and then switches to a second provider."
+
+---
+
+### B31. Four videos: what each one is for (Nov 7)
+The plan and scripts are in [tender/docs/VIDEOS.md](tender/docs/VIDEOS.md). They're cut from **one recording session** of 16 clips, recorded in a set order on a freshly started demo stack.
+- **A. ETHGlobal (3:30):** the whole product, all three rails, the explorers, the tests.
+- **B. Uniswap:** routing via the v4 Quoter, exact-output payments on the PoolManager, **the CheckoutHook paid by Uniswap's own router**, baskets, Blockscout proofs. Their tech creates differences D1–D7.
+- **C. Whitechain (2–4 min):** the 23-line drop-in, the **customer view**, the **merchant view**, refunds and CSV, the live USDT payment, the 0.40 refund and the permit payment, and "why settle on Whitechain". Their tech creates D8–D10 and D12.
+- **D. Hedera (≤5 min):** the manifest, the 402, two purchases settled with no human, the refusal, **the HashScan link**, the HCS topic. Their tech creates D11.
+
+Every video uses the same 20-second "differences" line over the comparison table. Each sponsor video then says which differences that sponsor makes possible, and gives the other two sponsors one line.
+
+**Two honesty lines to say in the videos:**
+- The app clips are recorded on the demo stack (a local copy of the testnets); the same contracts are live, and the explorers show it.
+- The Whitechain checkout in the app is approve + pay; the one-signature permit payment is shown on the explorer.
+
+**Tested before recording:** every app screen in the four scripts was clicked through in a real browser, including the hook, split and basket payments (`e2e/ui.flows.e2e.ts`).
