@@ -1,6 +1,6 @@
 # How AI was used (ETHGlobal rule: "clearly document where and how AI tools were used")
 
-**Tool:** Claude Code (Anthropic), used as a pair programmer throughout. The human on this project is new to Solidity and web3; every contract and function was explained line by line and is documented in `docs/study_B.md` so the human can defend it at the booth.
+**Tool:** Claude Code (Anthropic), used as a pair programmer throughout. The team member who led Tender is new to Solidity and web3; every contract and function was explained line by line and is documented in `docs/study_B.md` so the team can defend it at the booth.
 
 ## What AI drafted
 - First drafts of all Solidity (`CheckoutCore`, `UniswapCheckout`, `CheckoutHook`, scripts) and their tests.

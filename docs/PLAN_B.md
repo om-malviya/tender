@@ -2,7 +2,7 @@
 
 **Pay with any token. The merchant gets the exact stablecoin amount.**
 
-> ETHGlobal Mumbai 2026 · Project B (Person 2, solo submission) · Plan v2, Nov 4 2026
+> ETHGlobal Mumbai 2026 · Project B (team project; Person 2 leads it) · Plan v2, Nov 4 2026
 > **Build timing (team decision, Nov 4):** the team has a conference during the hackathon, so Project B is built **before** kickoff. The team says it has told the organisers. Build in the open: keep the organisers' written OK, never rewrite commit dates, and add a "Build timeline" section to the README (§1).
 > **v2 change:** `UniswapCheckout` calls the v4 PoolManager directly (unlock → swap → settle → take) instead of the Universal Router, so swaps are tested locally against a real PoolManager (§5.2).
 > Verification labels in this file: **[V]** means checked on the official sponsor page or docs on Nov 4. **[CHECK]** means it is unconfirmed and must be tested before we rely on it.
@@ -43,7 +43,7 @@
   3. **Pay-per-request sales to AI agents through x402** on Hedera testnet, for the Hedera x402 prize.
 - **Prizes targeted (the maximum of 3 partner prizes):** Uniswap "Build with Uniswap" ($10k), Whitechain "Operate" ($5k) and Hedera "AI Agents That Pay" ($6.5k).
 - **Uniswap comes first.** The Uniswap part has to work on its own. Whitechain and Hedera are layered on top, and the plan cuts Hedera first if time runs out.
-- **Precondition from the main plan:** ask on the ETHGlobal Discord whether two members of one group can submit two separate solo projects. If the answer is no, Project B is dropped and both of you build Receipts.
+- **Resolved Nov 7: Tender is submitted as one team project** (teammate: parthdagia05). The original precondition was to ask on the ETHGlobal Discord whether two members of one group can submit two separate solo projects. If the answer is no, Project B is dropped and both of you build Receipts.
 
 ---
 
@@ -531,7 +531,7 @@ tender/
 - [ ] **Two Hedera testnet accounts** (merchant and agent) from portal.hedera.com. Note the key type. Associate them with the USDC token.
 - [ ] **Uniswap Developer Platform API key** (developers.uniswap.org/dashboard).
 - [ ] **Tools installed:** Foundry (`foundryup`), Node 20+, pnpm, git, and a browser wallet.
-- [ ] **Discord:** post the two-solo-projects question.
+- [x] **Discord:** two-solo-projects question: resolved, Tender is a team project.
 
 ---
 
@@ -601,7 +601,7 @@ tender/
 | 7 | ~~`whitechain` profile compiles with 0.8.30~~ | **Done Nov 4:** `FOUNDRY_PROFILE=whitechain forge script script/DeployWhitechain.s.sol` compiles with 0.8.30/prague | n/a |
 | 8 | ~~Hedera facilitator assets and USDC token ID~~ | **Done Nov 4:** Blocky402 `/supported` lists `exact` on `hedera:testnet`, fee payer `0.0.7162784`; USDC = `0.0.429274` (constant in `@x402/hedera`); our paywall returns a correct 402 live | n/a |
 | 9 | ~~x402 middleware package~~ | **Done Nov 4:** `@x402/hono` `paymentMiddleware` (used in demo-shop) | n/a |
-| 10 | Two solo projects allowed | Discord answer | Drop B, join Receipts |
+| 10 | Two solo projects allowed | resolved: one team project | n/a |
 
 ---
 

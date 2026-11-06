@@ -1,6 +1,6 @@
 # Study guide for Project B (Tender)
 
-> **For:** you, Person 2. You know roughly how a blockchain works and need to present Tender to sponsor judges alone and answer their questions.
+> **For:** you, Person 2, who leads Tender in a two-person team. You know roughly how a blockchain works and need to present Tender to the sponsor judges and answer their questions.
 > **Budget:** about 8.5 hours. **Start with PART A** (the differences from Universal Router, 0x and Coinbase Commerce, and how each is built): it is the core of the presentation. If you only have about 4.5 hours, do PART A plus the **minimum path**: Modules 1, 3, 4 and 8.
 > **How to use each module:**
 > 1. Read the explanation.
