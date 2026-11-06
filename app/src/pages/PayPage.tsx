@@ -28,8 +28,8 @@ export function PayLookupPage() {
           }}
         >
           <div className="field">
-            <label>Network</label>
-            <select value={chain} onChange={(e) => setChain(e.target.value as ChainKey)}>
+            <label htmlFor="lookup-network">Network</label>
+            <select id="lookup-network" value={chain} onChange={(e) => setChain(e.target.value as ChainKey)}>
               {cfg.chains.map((c) => (
                 <option key={c.key} value={c.key} disabled={!c.checkout}>
                   {c.name}
@@ -39,8 +39,8 @@ export function PayLookupPage() {
             </select>
           </div>
           <div className="field">
-            <label>Invoice #</label>
-            <input value={id} onChange={(e) => setId(e.target.value.replace(/\D/g, ""))} placeholder="1" autoFocus />
+            <label htmlFor="lookup-id">Invoice #</label>
+            <input id="lookup-id" inputMode="numeric" value={id} onChange={(e) => setId(e.target.value.replace(/\D/g, ""))} placeholder="1" autoFocus />
           </div>
           <button className="btn primary" type="submit" disabled={!id}>
             Open
@@ -260,6 +260,11 @@ export function PayPage() {
   const balances = routes.filter((r) => (seen.has(r.token.address) ? false : (seen.add(r.token.address), true))).map((r) => ({ token: r.token, balance: r.balance }));
   const priceOf = (addr: string) => rankQ.data?.usdPerToken?.[addr.toLowerCase()];
   const inFlight = phase !== "idle" && phase !== "done";
+  const symbolOf = (a: string) => tokenOf(chainCfg, a)?.symbol ?? short(a);
+  const legLabel = (l: BasketView["legs"][number]) =>
+    l.path.length
+      ? `${l.path.map((h) => `${symbolOf(h.tokenIn)} -${(h.fee / 10_000).toFixed(2)}%->`).join(" ")} ${settle?.symbol ?? ""}`
+      : `${symbolOf(l.tokenIn)} (no swap)`;
 
   return (
     <>
@@ -463,7 +468,6 @@ export function PayPage() {
             <table>
               <thead>
                 <tr>
-                  <th>Token</th>
                   <th>Route</th>
                   <th className="num">Spend</th>
                   <th className="num">Guaranteed {settle.symbol}</th>
@@ -475,9 +479,8 @@ export function PayPage() {
                   return (
                     <tr key={i}>
                       <td>
-                        <span className="token">{t?.symbol ?? short(l.tokenIn)}</span>
+                        <RouteChips label={legLabel(l)} />
                       </td>
-                      <td className="muted">{l.path.length ? `${l.path.length}-hop swap` : "no swap"}</td>
                       <td className="num">{amount(l.amountIn, t?.decimals ?? 18, 6)}</td>
                       <td className="num">{amount(l.path.length ? l.minOut : l.amountIn, settle.decimals)}</td>
                     </tr>
@@ -489,7 +492,7 @@ export function PayPage() {
           <div className="panel-foot row" style={{ justifyContent: "space-between", alignItems: "center" }}>
             <span className="muted">{basket.covers ? `Guaranteed ${amount(basket.guaranteedOut, settle.decimals)} ${settle.symbol} ≥ ${amount(inv.amount, settle.decimals)} due` : "Your whole wallet isn't enough for this invoice."}</span>
             <button className="btn primary" disabled={!basket.covers || inFlight} onClick={payBasket}>
-              Pay with basket
+              Pay {amount(inv.amount, settle.decimals)} {settle.symbol} with basket
             </button>
           </div>
         </Panel>

@@ -174,7 +174,7 @@ function InvoiceRow({ inv, readOnly }: { inv: InvoiceRecordView; readOnly: boole
                 <span className="muted">
                   Refund to <Addr value={inv.payer} chain={chain} /> · up to {amount(remaining, settle.decimals)} {settle.symbol}
                 </span>
-                <input style={{ width: 120 }} value={refundAmount} onChange={(e) => setRefundAmount(e.target.value)} placeholder="0.25" />
+                <input aria-label="Refund amount" inputMode="decimal" style={{ width: 120 }} value={refundAmount} onChange={(e) => setRefundAmount(e.target.value)} placeholder="0.25" />
                 <button className="btn small" onClick={() => setRefundAmount(amount(remaining, settle.decimals, settle.decimals))}>
                   Full
                 </button>
@@ -235,8 +235,8 @@ function CreateInvoice() {
         ) : (
           <div className="row">
             <div className="field">
-              <label>Network</label>
-              <select value={chainKey} onChange={(e) => setChainKey(e.target.value as ChainKey)}>
+              <label htmlFor="inv-network">Network</label>
+              <select id="inv-network" value={chainKey} onChange={(e) => setChainKey(e.target.value as ChainKey)}>
                 {deployed.map((c) => (
                   <option key={c.key} value={c.key}>
                     {c.name} · {c.settleToken.symbol}
@@ -245,16 +245,16 @@ function CreateInvoice() {
               </select>
             </div>
             <div className="field">
-              <label>Amount ({chain?.settleToken.symbol})</label>
-              <input style={{ width: 120 }} value={value} onChange={(e) => setValue(e.target.value)} />
+              <label htmlFor="inv-amount">Amount ({chain?.settleToken.symbol})</label>
+              <input id="inv-amount" inputMode="decimal" style={{ width: 120 }} value={value} onChange={(e) => setValue(e.target.value)} />
             </div>
             <div className="field">
-              <label>Expires in (min)</label>
-              <input style={{ width: 110 }} value={minutes} onChange={(e) => setMinutes(e.target.value.replace(/\D/g, ""))} />
+              <label htmlFor="inv-minutes">Expires in (min)</label>
+              <input id="inv-minutes" inputMode="numeric" style={{ width: 110 }} value={minutes} onChange={(e) => setMinutes(e.target.value.replace(/\D/g, ""))} />
             </div>
             <div className="field" style={{ flex: 1, minWidth: 160 }}>
-              <label>Order reference</label>
-              <input value={orderRef} onChange={(e) => setOrderRef(e.target.value)} />
+              <label htmlFor="inv-ref">Order reference</label>
+              <input id="inv-ref" value={orderRef} onChange={(e) => setOrderRef(e.target.value)} />
             </div>
             <button className="btn primary" disabled={busy} onClick={create}>
               {busy ? "Creating…" : "Create invoice"}
