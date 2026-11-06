@@ -38,6 +38,9 @@ exact-output swaps on the v4 PoolManager (Unichain Sepolia), and ranks routes wi
    CREATE2 address in our run; calling the deterministic deployer (0x4e59…956C) directly with `salt ++ initcode`
    did. A one-paragraph "deploying a hook from a Foundry script" recipe (with `vm.computeCreate2Address`) would help.
 
+8. **Unichain Sepolia's public RPC under real use.** Deploying and demoing on `sepolia.unichain.org` we hit three things: a transaction receipt that didn't arrive within the default timeout (the tx had landed), a stale read right after a write (`nextInvoiceId` one behind, served by a lagging node), and **HTTP 429 "Your IP has exceeded its request rate limit"** on `eth_getLogs` when a dashboard scanned events for a few visitors. We now wait 300 s for receipts, take ids from the transaction's own events, and fall back to a second provider (PublicNode) on errors. A note in the Unichain docs on the public RPC's limits (requests per second, `getLogs` range: we found 1,000 blocks) would help anyone building a dashboard.
+9. **Testnet ETH vs v4 liquidity.** The Superchain faucet gives 0.01 ETH a day without an on-chain identity. Seeding even small demo pools needed about 0.12 WETH at full size, so we wrote a "lite" seeding profile (about $25 of liquidity) and priced demo invoices at 0.10 USDC. A small, reliable WETH/USDC pool maintained by Uniswap on Unichain Sepolia would make every hackathon demo more realistic (see "One concrete improvement").
+
 ## What we built on the hook side
 A **CheckoutHook**: `afterSwap` + `afterSwapReturnDelta`. A swap through a hooked pool carrying
 `hookData = (invoiceId, payer)` pays a merchant invoice: the hook takes exactly the invoice amount of the output to
