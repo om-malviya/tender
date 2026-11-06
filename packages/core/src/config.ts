@@ -40,6 +40,10 @@ export interface ChainConfig {
      * thin or manipulated pool is the same risk. Unset = any pool the Quoter can find.
      */
     pools?: AllowedPool[];
+    /** The CheckoutHook: pools with it attached settle invoices from inside ANY router's swap. */
+    hook?: Address;
+    /** A generic v4 router (Uniswap's PoolSwapTest) the pay page uses for hook routes: proves "any router" works. */
+    swapRouter?: Address;
   };
   explorer: string;
 }
@@ -50,6 +54,8 @@ export interface AllowedPool {
   b: Address;
   fee: number;
   tickSpacing: number;
+  /** address(0) / undefined = plain pool (usable by UniswapCheckout); otherwise the hook attached to it */
+  hooks?: Address;
 }
 
 /** Uniswap v4 fee tiers we look for pools in: fee (hundredths of a bip) + matching tick spacing. */
@@ -74,12 +80,14 @@ export function loadChains(env: Record<string, string | undefined> = defaultEnv(
   const usdc = (env.UNICHAIN_USDC ?? "0x31d0220469e10c4E71834a79b1f276d740d3768F") as Address;
   const weth: Address = "0x4200000000000000000000000000000000000006";
   // The three pools SeedPools.s.sol creates/funds. TENDER_ANY_POOL=1 lifts the allowlist.
+  const hook = addr(env.UNICHAIN_HOOK);
   const seededPools: AllowedPool[] | undefined =
     demo && env.TENDER_ANY_POOL !== "1"
       ? [
           { a: weth, b: usdc, fee: 500, tickSpacing: 10 },
           { a: demo, b: weth, fee: 3000, tickSpacing: 60 },
           { a: demo, b: usdc, fee: 3000, tickSpacing: 60 },
+          ...(hook ? [{ a: weth, b: usdc, fee: 500, tickSpacing: 10, hooks: hook }, { a: demo, b: usdc, fee: 3000, tickSpacing: 60, hooks: hook }] : []),
         ]
       : undefined;
   return {
@@ -96,6 +104,8 @@ export function loadChains(env: Record<string, string | undefined> = defaultEnv(
         weth,
         extraTokens: demo ? [{ address: demo, symbol: "DEMO", decimals: 18 }] : [],
         pools: seededPools,
+        hook,
+        swapRouter: addr(env.UNICHAIN_SWAP_ROUTER) ?? (hook ? "0x9140a78c1a137c7ff1c151ec8231272af78a99a4" : undefined),
       },
       explorer: env.UNICHAIN_EXPLORER ?? "https://sepolia.uniscan.xyz",
     },

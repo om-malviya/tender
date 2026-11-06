@@ -48,13 +48,27 @@ export interface Hop {
   fee: number;
   tickSpacing: number;
 }
+export interface SplitLegView {
+  hops: Hop[];
+  amountIn: string;
+  minOut: string;
+}
+export interface HookRouteView {
+  router: Address;
+  pool: { currency0: Address; currency1: Address; fee: number; tickSpacing: number; hooks: Address };
+  zeroForOne: boolean;
+}
 export interface RouteView {
-  source: "direct" | "v4-quoter" | "uniswap-api";
+  source: "direct" | "v4-quoter" | "uniswap-api" | "v4-hook" | "split";
   token: Token;
   hops: Hop[];
   label: string;
   amountIn: string;
   maxAmountIn: string;
+  slippageBps: number;
+  impactBps: number;
+  split?: SplitLegView[];
+  hook?: HookRouteView;
   balance: string;
   gasUnits: string;
   gasUsd: number;

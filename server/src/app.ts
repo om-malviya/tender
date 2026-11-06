@@ -109,10 +109,11 @@ export function createApp(deps: ServerDeps) {
     try {
       const ranked = await rankRoutes({ client: deps.clientFor(chain), cfg, invoiceId, payer, slippageBps, quoter });
       const invoiceUsd = Number(ranked.invoice.amount) / 10 ** cfg.settleToken.decimals;
-      // best (cheapest) executable route per token, whatever the balance
+      // best (cheapest) PLAIN-pool route per token, whatever the balance. Only "v4-quoter" routes run inside
+      // payWithBasket; hook routes go through a different pool and split routes are already baskets.
       const best = new Map<string, (typeof ranked.routes)[number]>();
       for (const r of ranked.routes) {
-        if (r.source === "direct" || !r.executable || !r.hops.length) continue;
+        if (r.source !== "v4-quoter" || !r.executable || !r.hops.length) continue;
         const k = r.token.address.toLowerCase();
         if (!best.has(k)) best.set(k, r);
       }

@@ -42,8 +42,10 @@ forge script script/DeployUnichain.s.sol --rpc-url $RPC --private-key $DEPLOYER_
 RUN=broadcast/DeployUnichain.s.sol/31337/run-latest.json
 DEMO=$(jq -r '.transactions[] | select(.contractName=="DemoToken") | .contractAddress' $RUN)
 CHECKOUT=$(jq -r '.transactions[] | select(.contractName=="UniswapCheckout") | .contractAddress' $RUN)
+HOOK=$(jq -r '.transactions[] | select(.contractName=="CheckoutHook") | .contractAddress' $RUN)
+[ -n "$HOOK" ] && [ "$HOOK" != "null" ] || { echo "hook address not found in broadcast"; exit 1; }
 DEPLOY_BLOCK=$(($(jq -r '.receipts[0].blockNumber' $RUN)))
-DEMO=$DEMO forge script script/SeedPools.s.sol --rpc-url $RPC --private-key $DEPLOYER_PK --broadcast --slow 2>&1 | grep -E "created pool|already existed" || true
+DEMO=$DEMO HOOK=$HOOK forge script script/SeedPools.s.sol --rpc-url $RPC --private-key $DEPLOYER_PK --broadcast --slow 2>&1 | grep -E "created pool|already existed" || true
 cd ..
 
 # the payer's wallet: tokens the store doesn't take directly
@@ -91,6 +93,8 @@ WHITECHAIN_DEPLOY_BLOCK=$WC_DEPLOY_BLOCK
 UNICHAIN_SEPOLIA_RPC=$RPC
 UNICHAIN_CHAIN_ID=31337
 UNICHAIN_CHECKOUT=$CHECKOUT
+UNICHAIN_HOOK=$HOOK
+UNICHAIN_SWAP_ROUTER=0x9140a78c1a137c7ff1c151ec8231272af78a99a4
 UNICHAIN_DEPLOY_BLOCK=$DEPLOY_BLOCK
 DEMO=$DEMO
 MERCHANT_PK=$MERCHANT_PK
@@ -100,4 +104,4 @@ DEV_WALLET_ACCOUNTS=$PAYER,$MERCHANT
 SHOP_URL=http://localhost:8788
 TENDER_APP_URL=http://localhost:5173
 EOF
-echo "deployed UniswapCheckout $CHECKOUT, DemoToken $DEMO -> settings in .env.fork"
+echo "deployed UniswapCheckout $CHECKOUT, CheckoutHook $HOOK, DemoToken $DEMO -> settings in .env.fork"

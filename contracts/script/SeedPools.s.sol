@@ -28,6 +28,9 @@ interface IWETH {
 ///           WETH/USDC  0.05% : up to 0.03 WETH + 30 USDC (joins the existing pool at ITS price)
 ///           DEMO/WETH  0.30% : 50 DEMO + $75 of WETH at that price   -> 1 DEMO = $1.50
 ///           DEMO/USDC  0.30% : 4 DEMO + 6 USDC                       -> 1 DEMO = $1.50, deliberately THIN
+///         and, if HOOK is set, two pools with the CheckoutHook attached (payable by any router):
+///           WETH/USDC+hook 0.05% : $10 of WETH + 10 USDC
+///           DEMO/USDC+hook 0.30% : 2 DEMO + 3 USDC
 ///
 ///   DEMO=<address from DeployUnichain> forge script script/SeedPools.s.sol \
 ///       --rpc-url $UNICHAIN_SEPOLIA_RPC --private-key $DEPLOYER_PK --broadcast
@@ -46,6 +49,7 @@ contract SeedPools is Script {
     function run() external {
         address usdc = vm.envOr("UNICHAIN_USDC", DEFAULT_USDC);
         address demo = vm.envAddress("DEMO");
+        address hook = vm.envOr("HOOK", address(0));
         uint256 wrapEth = vm.envOr("WRAP_ETH", uint256(0.1 ether)); // ETH to wrap into WETH first
 
         vm.startBroadcast();
@@ -58,11 +62,15 @@ contract SeedPools is Script {
 
         // WETH/USDC first. On Unichain Sepolia a 0.05% pool already exists at its own price (~$988/WETH
         // when checked on Nov 4), so read back whatever price the pool really has ...
-        uint160 wethUsdcPrice = _seed(WETH, 0.03e18, usdc, 30e6, 500, 10);
+        uint160 wethUsdcPrice = _seed(WETH, 0.03e18, usdc, 30e6, 500, 10, address(0));
         // ... and price DEMO against it so that 1 DEMO = $1.50 on BOTH routes: 50 DEMO = $75 of WETH.
         uint256 wethFor75Usd = _wethForUsdc(75e6, wethUsdcPrice, usdc);
-        _seed(demo, 50e18, WETH, wethFor75Usd, 3000, 60);
-        _seed(demo, 4e18, usdc, 6e6, 3000, 60); // the deliberately thin direct pool
+        _seed(demo, 50e18, WETH, wethFor75Usd, 3000, 60, address(0));
+        _seed(demo, 4e18, usdc, 6e6, 3000, 60, address(0)); // the deliberately thin direct pool
+        if (hook != address(0)) {
+            _seed(WETH, _wethForUsdc(10e6, wethUsdcPrice, usdc), usdc, 10e6, 500, 10, hook);
+            _seed(demo, 2e18, usdc, 3e6, 3000, 60, hook);
+        }
         vm.stopBroadcast();
     }
 
@@ -78,20 +86,25 @@ contract SeedPools is Script {
         return FullMath.mulDiv(FullMath.mulDiv(usdcAmount, q96, sqrtPriceX96), q96, sqrtPriceX96);
     }
 
-    function _seed(address tokenA, uint256 amountA, address tokenB, uint256 amountB, uint24 fee, int24 tickSpacing)
-        internal
-        returns (uint160 sqrtPriceX96Used)
-    {
+    function _seed(
+        address tokenA,
+        uint256 amountA,
+        address tokenB,
+        uint256 amountB,
+        uint24 fee,
+        int24 tickSpacing,
+        address hooks
+    ) internal returns (uint160 sqrtPriceX96Used) {
         (address t0, uint256 a0, address t1, uint256 a1) =
             tokenA < tokenB ? (tokenA, amountA, tokenB, amountB) : (tokenB, amountB, tokenA, amountA);
-        PoolKey memory key = PoolKey(Currency.wrap(t0), Currency.wrap(t1), fee, tickSpacing, IHooks(address(0)));
+        PoolKey memory key = PoolKey(Currency.wrap(t0), Currency.wrap(t1), fee, tickSpacing, IHooks(hooks));
         PoolId id = key.toId();
 
         (uint160 sqrtPriceX96,,,) = POOL_MANAGER.getSlot0(id);
         if (sqrtPriceX96 == 0) {
             sqrtPriceX96 = uint160(Math.sqrt(FullMath.mulDiv(a1, 1 << 192, a0)));
             POOL_MANAGER.initialize(key, sqrtPriceX96);
-            console2.log("created pool, fee", fee);
+            console2.log("created pool, fee", fee, hooks == address(0) ? "" : "(hooked)");
         } else {
             console2.log("pool already existed, keeping its price; fee", fee);
         }

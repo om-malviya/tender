@@ -4,6 +4,7 @@ export * from "./paths.ts";
 export * from "./quoter.ts";
 export * from "./tradingApi.ts";
 export * from "./rank.ts";
+export * from "./routers.ts";
 export * from "./basket.ts";
 export * from "./invoices.ts";
 export * from "./csv.ts";

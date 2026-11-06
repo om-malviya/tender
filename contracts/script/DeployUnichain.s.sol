@@ -42,7 +42,11 @@ contract DeployUnichain is Script {
         vm.startBroadcast();
         checkout = new UniswapCheckout(IPoolManager(POOL_MANAGER), settle, hookAddr);
         require(address(checkout) == predictedCheckout, "checkout address prediction failed");
-        hook = new CheckoutHook{salt: salt}(IPoolManager(POOL_MANAGER), checkout); // CREATE2 via forge's deployer
+        // CREATE2 through the deterministic deployer (0x4e59...956C, present on every EVM chain): calldata is
+        // salt ++ initcode, it returns the new address. Same deployer vm.computeCreate2Address assumes.
+        (bool ok, bytes memory ret) = CREATE2_FACTORY.call(abi.encodePacked(salt, hookInitCode));
+        require(ok, "CREATE2 deploy failed");
+        hook = CheckoutHook(address(bytes20(ret)));
         require(address(hook) == hookAddr, "hook address mismatch");
         vm.stopBroadcast();
 

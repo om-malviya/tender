@@ -9,6 +9,9 @@ import {
   loadChains,
   parseMirrorSales,
   parseTradingApiQuote,
+  bufferForImpact,
+  encodeHookData,
+  hookSwapArgs,
   rankRoutes,
   RankError,
   toCsv,
@@ -23,6 +26,7 @@ import {
 const USDC = "0x31d0220469e10c4E71834a79b1f276d740d3768F" as Address;
 const WETH = "0x4200000000000000000000000000000000000006" as Address;
 const DEMO = "0x00000000000000000000000000000000000000D3" as Address;
+const HOOK = "0x0000000000000000000000000000000000008044" as Address;
 
 // ---------------------------------------------------------------------------
 // A fake Quoter with fixed prices: 1 WETH = $3,000, 1 DEMO = $1.50, plus a fee per hop.
@@ -30,20 +34,23 @@ const DEMO = "0x00000000000000000000000000000000000000D3" as Address;
 // ---------------------------------------------------------------------------
 const usdPer: Record<string, number> = { [WETH.toLowerCase()]: 3000, [DEMO.toLowerCase()]: 1.5 };
 const decimalsOf = (a: Address) => (a.toLowerCase() === USDC.toLowerCase() ? 6 : 18);
-// Only the three pools we seed exist: WETH/USDC 0.05%, DEMO/WETH 0.30%, DEMO/USDC 0.30% (thin).
+// Only the pools we seed exist: WETH/USDC 0.05%, DEMO/WETH 0.30%, DEMO/USDC 0.30% (thin), plus the same
+// two token pairs with the CheckoutHook attached.
 const POOLS = new Set([`${WETH}>${USDC}@500`, `${DEMO}>${WETH}@3000`, `${DEMO}>${USDC}@3000`]);
-function routeMultiplier(hops: Hop[]) {
+// Price impact grows with trade size, like real pools: the thin DEMO/USDC pool moves 2% per $1, the
+// medium DEMO/WETH pool 0.5% per $1, and the deep WETH/USDC pool not at all.
+function routeMultiplier(hops: Hop[], usd = 0) {
   const exists = hops.every((h, i) => POOLS.has(`${h.tokenIn}>${hops[i + 1]?.tokenIn ?? USDC}@${h.fee}`));
   if (!exists) return null;
-  const thinDirect = hops.length === 1 && hops[0]!.tokenIn === DEMO;
+  const impactPerUsd = hops.length === 1 && hops[0]!.tokenIn === DEMO ? 0.02 : hops[0]!.tokenIn === DEMO ? 0.005 : 0;
   // like v4: the fee is taken from the input, so you put in 1/(1 - fee) more per hop
-  return (thinDirect ? 1.2 : 1) * hops.reduce((m, h) => m / (1 - h.fee / 1_000_000), 1);
+  return (1 + impactPerUsd * usd) * hops.reduce((m, h) => m / (1 - h.fee / 1_000_000), 1);
 }
 const fakeQuoter: Quoter = {
   async exactOut(hops, _settle, amountOut) {
-    const m = routeMultiplier(hops);
-    if (m === null) return null;
     const usd = Number(amountOut) / 1e6;
+    const m = routeMultiplier(hops, usd);
+    if (m === null) return null;
     const tokens = (usd * m) / usdPer[hops[0]!.tokenIn.toLowerCase()]!;
     return { amountIn: BigInt(Math.ceil(tokens * 10 ** decimalsOf(hops[0]!.tokenIn))), gas: 100_000n };
   },
@@ -110,6 +117,7 @@ function fakeClient(opts: { status?: number; expiry?: bigint; balances: bigint[]
   } as unknown as PublicClient;
 }
 const cfg = loadChains({ UNICHAIN_CHECKOUT: "0x0000000000000000000000000000000000000c0c", DEMO })["unichain-sepolia"];
+const cfgHooked = loadChains({ UNICHAIN_CHECKOUT: "0x0000000000000000000000000000000000000c0c", DEMO, UNICHAIN_HOOK: HOOK })["unichain-sepolia"];
 
 describe("rankRoutes", () => {
   it("prefers the deep two-hop DEMO route over the thin direct pool", async () => {
@@ -121,12 +129,20 @@ describe("rankRoutes", () => {
       quoter: fakeQuoter,
       now: 1n,
     });
-    const demoRoutes = res.routes.filter((r) => r.token.symbol === "DEMO");
+    const demoRoutes = res.routes.filter((r) => r.token.symbol === "DEMO" && r.source === "v4-quoter");
     expect(demoRoutes).toHaveLength(2); // direct 0.30% and DEMO->WETH(0.30%)->USDC(0.05%); 1% pools missing
     expect(res.recommended?.hops).toHaveLength(2);
     expect(res.recommended!.totalCostUsd).toBeLessThan(demoRoutes.find((r) => r.hops.length === 1)!.totalCostUsd);
-    // fees show up as overpay: 0.30% + 0.05% on $10 is about $0.035
-    expect(res.recommended!.overpayUsd).toBeCloseTo(0.035, 2);
+    // buffers are sized from each route's measured impact: thin pool 20% -> capped at 3%; two-hop ~5% -> ~2.75%
+    expect(demoRoutes.find((r) => r.hops.length === 1)!.slippageBps).toBe(300);
+    expect(res.recommended!.slippageBps).toBeGreaterThan(200);
+    expect(res.recommended!.slippageBps).toBeLessThan(300);
+    // the deep WETH/USDC pool has no impact, so a WETH payer would get the 0.25% floor
+    const wethRes = await rankRoutes({ client: fakeClient({ balances: [0n, 10n ** 18n, 0n] }), cfg, invoiceId: 1n, payer: "0x000000000000000000000000000000000000dEaD", quoter: fakeQuoter, now: 1n });
+    expect(wethRes.recommended!.slippageBps).toBe(25);
+    // overpay = fees (0.30% + 0.05% ≈ $0.035) + the medium pool's impact (5% ≈ $0.50)
+    expect(res.recommended!.overpayUsd).toBeGreaterThan(0.5);
+    expect(res.recommended!.overpayUsd).toBeLessThan(0.6);
     expect(res.ethUsd).toBeCloseTo(3000, 0); // WETH priced (fee removed) even though the payer holds none
   });
 
@@ -163,6 +179,50 @@ describe("rankRoutes", () => {
     await expect(
       rankRoutes({ client: fakeClient({ expiry: 5n, balances: [0n, 0n, 0n] }), cfg, invoiceId: 1n, payer: zeroAddress, quoter: fakeQuoter, now: 10n }),
     ).rejects.toThrow(/expired/);
+  });
+});
+
+describe("rankRoutes: hook and split routes", () => {
+  const client = () => fakeClient({ balances: [0n, 0n, 100n * 10n ** 18n] });
+  const payer = "0x000000000000000000000000000000000000dEaD" as Address;
+
+  it("offers a hooked-pool route that any router can execute, with the swap arguments", async () => {
+    const res = await rankRoutes({ client: client(), cfg: cfgHooked, invoiceId: 1n, payer, quoter: fakeQuoter, now: 1n });
+    const hook = res.routes.find((r) => r.source === "v4-hook")!;
+    expect(hook).toBeDefined();
+    expect(hook.hook!.pool.hooks).toBe(HOOK);
+    expect(hook.hook!.router).toBe("0x9140a78c1a137c7ff1c151ec8231272af78a99a4");
+    expect(hook.hook!.zeroForOne).toBe(DEMO.toLowerCase() < USDC.toLowerCase());
+    const args = hookSwapArgs(hook.hook!, hook.maxAmountIn, 1n, payer);
+    expect(args[1].amountSpecified).toBe(-hook.maxAmountIn); // exact input
+    expect(args[3]).toBe(encodeHookData(1n, payer));
+  });
+
+  it("no hook configured: no hook routes", async () => {
+    const res = await rankRoutes({ client: client(), cfg, invoiceId: 1n, payer, quoter: fakeQuoter, now: 1n });
+    expect(res.routes.some((r) => r.source === "v4-hook")).toBe(false);
+  });
+
+  it("adds a split route when splitting across two paths beats the best single path", async () => {
+    // $10 via WETH alone costs ~5% impact; 75% via WETH + 25% on the thin pool costs less in total
+    const res = await rankRoutes({ client: client(), cfg, invoiceId: 1n, payer, quoter: fakeQuoter, now: 1n });
+    const split = res.routes.find((r) => r.source === "split")!;
+    expect(split).toBeDefined();
+    expect(split.split).toHaveLength(2);
+    expect(split.split![0]!.minOut + split.split![1]!.minOut).toBe(10_000_000n); // legs cover the whole invoice
+    const bestSingle = res.routes.filter((r) => r.source === "v4-quoter" && r.token.symbol === "DEMO").sort((a, b) => a.totalCostUsd - b.totalCostUsd)[0]!;
+    expect(split.amountIn).toBeLessThan(bestSingle.amountIn);
+  });
+
+  it("a fixed slippage overrides the impact-based buffer", async () => {
+    const res = await rankRoutes({ client: client(), cfg, invoiceId: 1n, payer, quoter: fakeQuoter, slippageBps: 100, now: 1n });
+    expect(res.routes.filter((r) => r.hops.length).every((r) => r.slippageBps === 100)).toBe(true);
+  });
+
+  it("bufferForImpact: floor 0.25%, half the impact on top, cap 3%", () => {
+    expect(bufferForImpact(0)).toBe(25);
+    expect(bufferForImpact(100)).toBe(75);
+    expect(bufferForImpact(10_000)).toBe(300);
   });
 });
 

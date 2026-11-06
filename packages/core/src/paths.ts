@@ -6,6 +6,8 @@ export interface Hop {
   tokenIn: Address;
   fee: number;
   tickSpacing: number;
+  /** set only for hooked pools (CheckoutHook routes); UniswapCheckout.sol paths never carry it */
+  hooks?: Address;
 }
 
 /** Uniswap's own route format, used by the v4 Quoter (and the Universal Router). */
@@ -26,15 +28,24 @@ export interface PathKey {
  */
 export function candidatePaths(tokenIn: Address, settle: Address, weth: Address, allowed?: AllowedPool[]): Hop[][] {
   const same = (a: Address, b: Address) => a.toLowerCase() === b.toLowerCase();
+  const plain = allowed?.filter((p) => !p.hooks || p.hooks === zeroAddress);
   const isAllowed = (path: Hop[]) =>
-    !allowed ||
+    !plain ||
     path.every((h, i) => {
       const out = path[i + 1]?.tokenIn ?? settle;
-      return allowed.some(
+      return plain.some(
         (p) => p.fee === h.fee && p.tickSpacing === h.tickSpacing && ((same(p.a, h.tokenIn) && same(p.b, out)) || (same(p.b, h.tokenIn) && same(p.a, out))),
       );
     });
   return allPaths(tokenIn, weth, same).filter(isAllowed);
+}
+
+/** Single-hop routes through HOOKED pools (tokenIn -> settle with the CheckoutHook attached). */
+export function hookedPaths(tokenIn: Address, settle: Address, allowed?: AllowedPool[]): Hop[][] {
+  const same = (a: Address, b: Address) => a.toLowerCase() === b.toLowerCase();
+  return (allowed ?? [])
+    .filter((p) => p.hooks && p.hooks !== zeroAddress && ((same(p.a, tokenIn) && same(p.b, settle)) || (same(p.b, tokenIn) && same(p.a, settle))))
+    .map((p) => [{ tokenIn, fee: p.fee, tickSpacing: p.tickSpacing, hooks: p.hooks }]);
 }
 
 function allPaths(tokenIn: Address, weth: Address, same: (a: Address, b: Address) => boolean): Hop[][] {
@@ -63,7 +74,7 @@ export function toExactOutPathKeys(hops: Hop[]): PathKey[] {
     intermediateCurrency: h.tokenIn,
     fee: h.fee,
     tickSpacing: h.tickSpacing,
-    hooks: zeroAddress,
+    hooks: h.hooks ?? zeroAddress, // empty hookData: the CheckoutHook does nothing during a quote
     hookData: "0x",
   }));
 }
@@ -77,7 +88,7 @@ export function toExactInPathKeys(hops: Hop[], settle: Address): PathKey[] {
     intermediateCurrency: i + 1 < hops.length ? hops[i + 1]!.tokenIn : settle,
     fee: h.fee,
     tickSpacing: h.tickSpacing,
-    hooks: zeroAddress,
+    hooks: h.hooks ?? zeroAddress,
     hookData: "0x",
   }));
 }

@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { parseEventLogs, type Hex } from "viem";
+import { erc20Abi, parseEventLogs, type Hex } from "viem";
 import { useConnection } from "wagmi";
-import { checkoutCoreAbi, uniswapCheckoutAbi } from "@tender/core";
+import { checkoutCoreAbi, hookSwapArgs, poolSwapTestAbi, uniswapCheckoutAbi } from "@tender/core";
 import { api, type BasketView, type ChainKey, type RouteView } from "../lib/api.ts";
 import { useAppConfig } from "../lib/appConfig.ts";
 import { amount, short, tokenOf, usd } from "../lib/format.ts";
@@ -102,7 +102,54 @@ export function PayPage() {
     try {
       const checkout = chainCfg.checkout;
       const invoiceId = BigInt(id);
-      if (route.source === "direct") {
+      if (route.source === "v4-hook" && route.hook) {
+        // The invoice is paid by a plain Uniswap router swapping through the hooked pool. Tender's contract
+        // is never called: the hook inside the pool settles it. Change comes back in the settle token.
+        const amountIn = BigInt(route.maxAmountIn);
+        setBusy(`Approving ${amount(amountIn, route.token.decimals)} ${route.token.symbol} for the router…`);
+        await tx.approveIfNeeded(chainCfg.id, route.token.address, route.hook.router, amountIn);
+        setBusy("Swapping through the hooked pool…");
+        const settleBefore = await tx.client(chainCfg.id).readContract({ address: settle.address, abi: erc20Abi, functionName: "balanceOf", args: [tx.address!] });
+        const r = await tx.send({
+          chainId: chainCfg.id,
+          address: route.hook.router,
+          abi: poolSwapTestAbi,
+          functionName: "swap",
+          args: hookSwapArgs(route.hook, amountIn, invoiceId, tx.address!),
+        });
+        const settleAfter = await tx.client(chainCfg.id).readContract({ address: settle.address, abi: erc20Abi, functionName: "balanceOf", args: [tx.address!] });
+        setReceipt({
+          txHash: r.transactionHash,
+          spent: [{ symbol: route.token.symbol, amount: amountIn.toString(), decimals: route.token.decimals }],
+          returned: (settleAfter - settleBefore).toString(),
+          settled: inv.amount,
+          route: route.label,
+        });
+        announce(r.transactionHash);
+      } else if (route.source === "split" && route.split) {
+        // Two paths in one transaction, through payWithBasket (each leg is exact-input with a minimum output).
+        const legs = route.split.map((l) => ({
+          tokenIn: route.token.address,
+          amountIn: BigInt(l.amountIn),
+          path: l.hops.map((h) => ({ tokenIn: h.tokenIn, fee: h.fee, tickSpacing: h.tickSpacing })),
+          minOut: BigInt(l.minOut),
+        }));
+        const total = legs.reduce((s, l) => s + l.amountIn, 0n);
+        setBusy(`Approving ${amount(total, route.token.decimals)} ${route.token.symbol}…`);
+        await tx.approveIfNeeded(chainCfg.id, route.token.address, checkout, total);
+        setBusy("Swapping on both paths and paying…");
+        const r = await tx.send({ chainId: chainCfg.id, address: checkout, abi: uniswapCheckoutAbi, functionName: "payWithBasket", args: [invoiceId, legs, deadline()] });
+        const [ev] = parseEventLogs({ abi: uniswapCheckoutAbi, eventName: "BasketPaid", logs: r.logs });
+        const out = ev?.args.totalOut ?? BigInt(inv.amount);
+        setReceipt({
+          txHash: r.transactionHash,
+          spent: [{ symbol: route.token.symbol, amount: total.toString(), decimals: route.token.decimals }],
+          returned: (out - BigInt(inv.amount)).toString(),
+          settled: inv.amount,
+          route: route.label,
+        });
+        announce(r.transactionHash);
+      } else if (route.source === "direct") {
         setBusy(`Approving ${settle.symbol}…`);
         await tx.approveIfNeeded(chainCfg.id, settle.address, checkout, BigInt(inv.amount));
         setBusy("Paying…");
@@ -119,7 +166,7 @@ export function PayPage() {
           address: checkout,
           abi: uniswapCheckoutAbi,
           functionName: "payWithToken",
-          args: [invoiceId, route.token.address, maxIn, route.hops.map((h) => ({ ...h })), deadline()],
+          args: [invoiceId, route.token.address, maxIn, route.hops.map((h) => ({ tokenIn: h.tokenIn, fee: h.fee, tickSpacing: h.tickSpacing })), deadline()],
         });
         const [ev] = parseEventLogs({ abi: uniswapCheckoutAbi, eventName: "InvoicePaid", logs: r.logs });
         const spent = ev?.args.amountIn ?? maxIn;
@@ -346,13 +393,14 @@ export function PayPage() {
                     <b style={{ color: "var(--text)" }}>
                       {amount(selected.maxAmountIn, selected.token.decimals, 6)} {selected.token.symbol}
                     </b>{" "}
-                    (quote + 0.5%). Whatever the swap doesn't use comes straight back.
+                    (quote + {(selected.slippageBps / 100).toFixed(2)}%{selected.impactBps > 0 ? `, sized from this route's ${(selected.impactBps / 100).toFixed(2)}% price impact` : ""}). Whatever the swap doesn't use comes straight back.
+                    {selected.source === "v4-hook" && " Paid through a generic Uniswap router: the pool's hook settles the invoice."}
                   </div>
                   <button className="btn primary" disabled={Boolean(busy)} onClick={() => pay(selected)}>
                     {busy ??
                       (selected.source === "direct"
                         ? `Pay ${amount(inv.amount, settle.decimals)} ${settle.symbol}`
-                        : `Pay ${amount(inv.amount, settle.decimals)} ${settle.symbol} with ${selected.token.symbol}`)}
+                        : `Pay ${amount(inv.amount, settle.decimals)} ${settle.symbol} with ${selected.token.symbol}${selected.source === "v4-hook" ? " via any router" : selected.source === "split" ? " (split)" : ""}`)}
                   </button>
                 </div>
               ) : rankQ.isLoading ? (

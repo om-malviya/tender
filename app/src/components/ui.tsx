@@ -60,6 +60,8 @@ export function StatusPill({ status, refunded }: { status: InvoiceStatus; refund
 export function SourcePill({ source }: { source: RouteView["source"] }) {
   if (source === "direct") return <span className="pill">Direct</span>;
   if (source === "uniswap-api") return <span className="pill violet">Uniswap API</span>;
+  if (source === "v4-hook") return <span className="pill green" title="The pool itself settles the invoice: paid through a generic Uniswap router, not Tender's contract">Hook · any router</span>;
+  if (source === "split") return <span className="pill amber" title="Two paths in one transaction, to cut price impact">Split</span>;
   return <span className="pill blue">v4 Quoter</span>;
 }
 
@@ -84,6 +86,7 @@ export function Addr({ value, chain, kind = "address" }: { value?: string; chain
 
 /** DEMO →0.30% WETH →0.05% USDC */
 export function RouteChips({ label }: { label: string }) {
+  if (label.includes(" split: ") || label.includes(" · ")) return <span className="route"><span className="token">{label}</span></span>;
   const parts = routeParts(label);
   return (
     <span className="route">

@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { createPublicClient, createWalletClient, erc20Abi, formatUnits, http, maxUint256, parseEther, type Address, type Hex, type PublicClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { demoTokenAbi, loadChains, onchainQuoter, uniswapCheckoutAbi, type ChainKey } from "@tender/core";
+import { demoTokenAbi, hookSwapArgs, loadChains, onchainQuoter, poolSwapTestAbi, uniswapCheckoutAbi, type ChainKey } from "@tender/core";
 import { createApp } from "../server/src/app.ts";
 import { createShopApp } from "../demo-shop/server/app.ts";
 
@@ -63,9 +63,14 @@ for (const r of ranked.routes)
 const best = ranked.recommended;
 assert.ok(best, "a payable route was recommended");
 assert.equal(best.token.symbol, "DEMO");
-assert.equal(best.hops.length, 2, "the deep DEMO->WETH->USDC route should beat the thin direct DEMO pool");
-const directDemo = ranked.routes.find((r: { token: { symbol: string }; hops: unknown[] }) => r.token.symbol === "DEMO" && r.hops.length === 1);
-assert.ok(directDemo && directDemo.totalCostUsd > best.totalCostUsd);
+assert.ok(best.source === "v4-quoter" || best.source === "v4-hook" || best.source === "split", `best route kind: ${best.source}`);
+const directDemo = ranked.routes.find((r: { source: string; token: { symbol: string }; hops: unknown[] }) => r.source === "v4-quoter" && r.token.symbol === "DEMO" && r.hops.length === 1);
+const twoHopDemo = ranked.routes.find((r: { source: string; token: { symbol: string }; hops: unknown[] }) => r.source === "v4-quoter" && r.token.symbol === "DEMO" && r.hops.length === 2);
+assert.ok(directDemo && twoHopDemo && directDemo.totalCostUsd > twoHopDemo.totalCostUsd, "the deep two-hop route beats the thin direct pool");
+if (best.source !== "v4-quoter") {
+  // pay the plain-contract way for this step regardless of which kind ranked first; the hook is tested in 1b
+  Object.assign(best, twoHopDemo);
+}
 console.log(`   recommended: ${best.label}, max ${Number(best.maxAmountIn) / 1e18} DEMO`);
 
 const merchantBefore = await balance(USDC, merchant.address);
@@ -75,7 +80,7 @@ await send(
     address: checkout,
     abi: uniswapCheckoutAbi,
     functionName: "payWithToken",
-    args: [BigInt(order1.invoiceId), DEMO, BigInt(best.maxAmountIn), best.hops.map((h: { tokenIn: Address; fee: number; tickSpacing: number }) => ({ ...h })), BigInt(Math.floor(Date.now() / 1000) + 600)],
+    args: [BigInt(order1.invoiceId), DEMO, BigInt(best.maxAmountIn), best.hops.map((h: { tokenIn: Address; fee: number; tickSpacing: number }) => ({ tokenIn: h.tokenIn, fee: h.fee, tickSpacing: h.tickSpacing })), BigInt(Math.floor(Date.now() / 1000) + 600)],
   }),
 );
 const got = (await balance(USDC, merchant.address)) - merchantBefore;
@@ -83,6 +88,33 @@ const spent = demoBefore - (await balance(DEMO, payer.address));
 assert.equal(got, 1_000_000n, "merchant must receive exactly 1.00 USDC");
 assert.ok(spent <= BigInt(best.maxAmountIn), "payer never pays more than maxAmountIn");
 console.log(`   paid: merchant +${usdc(got)} USDC (exact), payer spent ${formatUnits(spent, 18)} DEMO`);
+
+// ===== 1b. Hook payment: a plain Uniswap router pays the invoice by swapping through the hooked pool ====
+const order1b = await post(shop, "/api/create-invoice", { chain: "unichain-sepolia" });
+const ranked1b = await post(api, "/api/rank", { chain: "unichain-sepolia", invoiceId: order1b.invoiceId, payer: payer.address });
+const hookRoute = ranked1b.routes.find((r: { source: string; token: { symbol: string } }) => r.source === "v4-hook" && r.token.symbol === "DEMO");
+assert.ok(hookRoute, "a hooked-pool route is offered for DEMO");
+console.log(`\n1b) hook route: ${hookRoute.label}, max ${Number(hookRoute.maxAmountIn) / 1e18} DEMO via router ${hookRoute.hook.router.slice(0, 10)}…`);
+await send(payerWallet.writeContract({ address: DEMO, abi: erc20Abi, functionName: "approve", args: [hookRoute.hook.router, BigInt(hookRoute.maxAmountIn)] }));
+const mB = await balance(USDC, merchant.address);
+const pB = await balance(USDC, payer.address);
+await send(
+  payerWallet.writeContract({
+    address: hookRoute.hook.router,
+    abi: poolSwapTestAbi,
+    functionName: "swap",
+    args: hookSwapArgs(hookRoute.hook, BigInt(hookRoute.maxAmountIn), BigInt(order1b.invoiceId), payer.address),
+  }),
+);
+assert.equal((await balance(USDC, merchant.address)) - mB, 1_000_000n, "hook: merchant receives exactly 1.00 USDC");
+const change = (await balance(USDC, payer.address)) - pB;
+assert.ok(change > 0n, "hook: the payer gets the surplus output back");
+const paid1b = await (await api.request(`/api/invoices/unichain-sepolia/${order1b.invoiceId}`)).json();
+assert.equal(paid1b.status, "Paid");
+assert.equal(paid1b.payer.toLowerCase(), payer.address.toLowerCase(), "payer recorded from hookData");
+console.log(`    paid via generic router: merchant +1.00 USDC (exact), payer got ${usdc(change)} USDC change; Tender's contract never called`);
+const split = ranked1b.routes.find((r: { source: string }) => r.source === "split");
+console.log(`    split route offered: ${split ? split.label : "no (not cheaper than the best single path right now)"}`);
 
 // ===== 2. Basket payment: 0.40 USDC + leftover DEMO + WETH pay one invoice ===========================
 const order2 = await post(shop, "/api/create-invoice", { chain: "unichain-sepolia" });
