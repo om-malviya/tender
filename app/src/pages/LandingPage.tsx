@@ -66,7 +66,12 @@ function useScrollReveal() {
       if (el.getBoundingClientRect().top > window.innerHeight) el.classList.add("pending"); // only animate what's below the fold
       io.observe(el);
     }
-    return () => io.disconnect();
+    // Fallback: whatever hasn't scrolled into view after 1.5 s is shown anyway (screenshots, odd viewports).
+    const t = setTimeout(() => els.forEach((el) => el.classList.add("in")), 1500);
+    return () => {
+      io.disconnect();
+      clearTimeout(t);
+    };
   }, []);
 }
 
