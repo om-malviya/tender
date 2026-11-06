@@ -1353,3 +1353,28 @@ The **browser** version passes too ([ui.e2e.ts L95](tender/e2e/ui.e2e.ts#L95)): 
 **Judge questions**
 - "Where is this hosted?" → "Frontend on Cloudflare's edge, free and global; the API and demo shop are containers on AWS App Runner in Mumbai, and the contracts are on Unichain Sepolia and Whitechain Sepolia."
 - "What happens if your server dies mid-demo?" → "The landing page keeps working because it's static, and the app says the API is offline instead of crashing. Payments are on-chain, so nothing is lost: when the API comes back it rebuilds every invoice from contract events."
+
+---
+
+### B26. Live on Unichain Sepolia, and tests per category (Nov 6)
+**What's live** (all three contracts verified on Blockscout, links in [README](tender/README.md)):
+- `UniswapCheckout` `0x013a…5795`, `CheckoutHook` `0x40a7…8044`, `DemoToken` `0x29ad…339c`; record in [deployments/unichain-sepolia.env](tender/deployments/unichain-sepolia.env).
+- **Proof 1, any-token payment:** invoice #1 (0.10 USDC) paid in DEMO through DEMO→WETH→USDC. Checked on-chain afterwards: the merchant's USDC went up by exactly 100000 (0.10 USDC with 6 decimals), the invoice is Paid, the contract holds 0 DEMO and 0 USDC.
+- **Proof 2, hook payment:** invoice #2 paid by calling **Uniswap's own `PoolSwapTest` router** on the hooked DEMO/USDC pool, with `hookData = (invoiceId, payer)`. Our checkout contract was never called by the payer; the hook settled the invoice from inside the swap.
+
+**Budget engineering.** The faucet gives 0.01 ETH a day, but the full seeding needed about 0.12 WETH. So [SeedPools.s.sol](tender/contracts/script/SeedPools.s.sol) has a `LITE` profile: it reads the live WETH/USDC price (≈ $1,293), wraps only the WETH it needs, and seeds about $25 of liquidity in total. Invoices are 0.10 USDC so price impact stays small. We **thinned the direct DEMO/USDC pool on purpose** so the ranking shows a real choice: two-hop 2.8% vs direct 12.8% vs split 1.0%.
+
+**Rehearse first.** Before spending real testnet funds, the runbook ran against a local fork of the *live* chain, with the real wallet and real pool state. That rehearsal caught the budget mismatch. The live run then found two public-RPC problems, a receipt timeout and a stale read. The runbooks now wait 300 s for receipts, stop on any revert, and read each invoice id from its own `InvoiceCreated` event. A stale read once made the hook swap target the already-paid invoice #1; **the hook refused it**, which is the safety check doing its job.
+
+**Tests: at least three checks per category.** 88 automated tests (41 Foundry + 47 Vitest); the README has a table by sponsor. New this round:
+- Trading API parser: multi-hop order and labels; split routes not executable; quotes without an input amount rejected.
+- HCS audit log: right mirror URL (topic, newest first, limit); mirror errors raised, not hidden; empty topics.
+- Quoter batching: separate ticks → separate batches; per-quote fallback when Multicall3 fails.
+- Audit log API: bad topic id → 400; entries returned; empty when not configured.
+
+**Mutation checking** (how we know a pass isn't luck): break the code on purpose and confirm a test fails. Six bugs tried, six caught. One break *wasn't* caught, and that was correct: swapping `queueMicrotask` for `setTimeout` only delays the flush, so behaviour doesn't change.
+
+**Judge questions**
+- "How do I know the merchant got exactly the amount?" → "Open the any-token transaction: the USDC transfer to the merchant is exactly 100000 units. The contract checks this before finishing, and our tests assert it for any amount (fuzzed)."
+- "Is the hook really router-agnostic?" → "Proof 2 was sent to Uniswap's own test router. Our checkout contract isn't in the call; the pool's hook settled the invoice."
+- "Why is liquidity so small?" → "Testnet faucets give 0.01 ETH a day. We seed our own pools, and the ranking measures their real depth; the same code works on deeper pools."
