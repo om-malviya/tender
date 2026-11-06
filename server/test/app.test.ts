@@ -23,7 +23,7 @@ const fakeClient = {
 } as unknown as PublicClient;
 const noQuotes: Quoter = { exactOut: async () => null, exactIn: async () => null };
 const sales: HederaSale[] = [
-  { txId: "0.0.5-1-1", timestamp: 1730700000, payer: "0.0.5", amount: 50_000n, tokenId: "0.0.429274", symbol: "USDC", decimals: 6, hashscanUrl: "https://hashscan.io/x" },
+  { txId: "0.0.5-1-1", timestamp: 1730700000, payer: "0.0.5", amount: 50_000n, tokenId: "0.0.429274", symbol: "USDC", decimals: 6, usd: 0.05, hashscanUrl: "https://hashscan.io/x" },
 ];
 
 const app = createApp({

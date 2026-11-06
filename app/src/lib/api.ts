@@ -127,6 +127,7 @@ export interface HederaSaleView {
   tokenId: string;
   symbol: string;
   decimals: number;
+  usd: number; // USDC at face value, HBAR at the server's configured rate
   hashscanUrl: string;
 }
 

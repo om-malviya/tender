@@ -22,7 +22,7 @@ export function AgentsPage() {
   });
   const audit = auditQ.data?.entries ?? [];
   const sales = salesQ.data?.sales ?? [];
-  const total = sales.reduce((s, x) => s + Number(x.amount) / 10 ** x.decimals, 0);
+  const total = sales.reduce((s, x) => s + x.usd, 0);
   const agents = new Set(sales.map((s) => s.payer)).size;
 
   return (
@@ -30,7 +30,7 @@ export function AgentsPage() {
       <PageHeader
         crumb={["Agent sales"]}
         title="Agent sales"
-        subtitle={<>AI agents buy from the shop per request over HTTP 402 (x402), settled in USDC on Hedera testnet.</>}
+        subtitle={<>AI agents buy from the shop per request over HTTP 402 (x402), settled on Hedera testnet in USDC or HBAR.</>}
       />
 
       <div className="stats">
@@ -55,7 +55,7 @@ export function AgentsPage() {
           <div className="step">
             <div className="step-n">03</div>
             <h3>Policy check, then sign</h3>
-            <p>Allowlist, per-merchant cap, total budget, human approval above a limit. Only then does it sign a Hedera USDC transfer.</p>
+            <p>Allowlist, per-merchant cap, total budget, human approval above a limit. Only then does it sign the Hedera transfer.</p>
           </div>
           <div className="step">
             <div className="step-n">04</div>
@@ -102,6 +102,7 @@ export function AgentsPage() {
                 ))}
               </tbody>
             </table>
+            {auditQ.isLoading && <Empty>Loading the topic from the Hedera mirror node…</Empty>}
             {!auditQ.isLoading && audit.length === 0 && <Empty>No entries yet.</Empty>}
           </div>
         )}

@@ -445,6 +445,43 @@ describe("Hedera mirror node + CSV", () => {
     expect(sales[0]!.hashscanUrl).toBe("https://hashscan.io/testnet/transaction/0.0.5555-1730700000-123456789");
   });
 
+  it("counts native-HBAR x402 payments too, valued at the configured rate, and nothing that isn't a sale", () => {
+    // Shapes copied from the live run on Nov 7: the facilitator (0.0.7162784) pays the fee, the agent pays 0.5 HBAR.
+    const hbar = {
+      transactions: [
+        {
+          transaction_id: "0.0.7162784-1793996113-115144711",
+          consensus_timestamp: "1793996113.5",
+          result: "SUCCESS",
+          transfers: [
+            { account: "0.0.3", amount: 5_000 },
+            { account: "0.0.98", amount: 60_000 },
+            { account: "0.0.7162784", amount: -65_000 }, // the network fee, paid by the facilitator
+            { account: "0.0.11343747", amount: -50_000_000 }, // the agent
+            { account: "0.0.11344182", amount: 50_000_000 }, // the merchant: +0.5 HBAR
+          ],
+        },
+        {
+          // the merchant moving its own HBAR around: it receives, but nobody sent exactly that amount
+          transaction_id: "0.0.11344182-1793996200-1",
+          consensus_timestamp: "1793996200.5",
+          result: "SUCCESS",
+          transfers: [
+            { account: "0.0.11344182", amount: 10_000 },
+            { account: "0.0.98", amount: -7_000 },
+            { account: "0.0.3", amount: -3_000 },
+          ],
+        },
+      ],
+    };
+    const sales = parseMirrorSales(hbar, "0.0.11344182", undefined, 0.1);
+    expect(sales).toHaveLength(1);
+    expect(sales[0]).toMatchObject({ payer: "0.0.11343747", amount: 50_000_000n, symbol: "HBAR", decimals: 8, tokenId: "0.0.0" });
+    expect(sales[0]!.usd).toBeCloseTo(0.05);
+    expect(parseMirrorSales(hbar, "0.0.11344182")).toHaveLength(0); // no rate configured: HBAR isn't counted
+    expect(parseMirrorSales(mirror, "0.0.7777")[0]!.usd).toBeCloseTo(0.05); // USDC at face value
+  });
+
   it("converts SDK transaction ids to the mirror-node format", () => {
     expect(toMirrorTxId("0.0.5555@1730700000.123456789")).toBe("0.0.5555-1730700000-123456789");
     expect(hashscanTxUrl("0.0.5555@1730700000.123456789")).toContain("0.0.5555-1730700000-123456789");

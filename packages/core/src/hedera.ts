@@ -16,6 +16,8 @@ export interface HederaSale {
   tokenId: string;
   symbol: string;
   decimals: number;
+  /** value in USD: USDC at face value, HBAR at the configured rate (testnet HBAR has no market price) */
+  usd: number;
   hashscanUrl: string;
 }
 
@@ -34,26 +36,42 @@ type MirrorTx = {
   consensus_timestamp: string;
   result: string;
   token_transfers?: { token_id: string; account: string; amount: number }[];
+  transfers?: { account: string; amount: number }[];
 };
 
-/** Pulls successful token payments INTO the merchant's account out of a mirror-node response. */
-export function parseMirrorSales(json: unknown, merchant: string, tokenId = HEDERA_TESTNET_USDC): HederaSale[] {
+/**
+ * Pulls successful payments INTO the merchant's account out of a mirror-node response: HTS token payments
+ * (USDC), and native HBAR payments when `hbarUsd` is given. An HBAR transfer only counts as a sale when ONE
+ * other account sent exactly what the merchant received; that leaves out network fees (paid by the x402
+ * facilitator) and anything that isn't a plain payment.
+ */
+export function parseMirrorSales(json: unknown, merchant: string, tokenId = HEDERA_TESTNET_USDC, hbarUsd?: number): HederaSale[] {
   const txs = ((json as { transactions?: MirrorTx[] })?.transactions ?? []).filter((t) => t.result === "SUCCESS");
   const sales: HederaSale[] = [];
-  for (const t of txs) {
-    const moves = (t.token_transfers ?? []).filter((x) => x.token_id === tokenId);
-    const received = moves.find((x) => x.account === merchant && x.amount > 0);
-    if (!received) continue;
+  const sale = (t: MirrorTx, payer: string, amount: number, id: string, usd: number) =>
     sales.push({
       txId: t.transaction_id,
       timestamp: Number(t.consensus_timestamp),
-      payer: moves.find((x) => x.amount < 0)?.account ?? "unknown",
-      amount: BigInt(received.amount),
-      tokenId,
-      symbol: HEDERA_TOKENS[tokenId]?.symbol ?? tokenId,
-      decimals: HEDERA_TOKENS[tokenId]?.decimals ?? 0,
+      payer,
+      amount: BigInt(amount),
+      tokenId: id,
+      symbol: HEDERA_TOKENS[id]?.symbol ?? id,
+      decimals: HEDERA_TOKENS[id]?.decimals ?? 0,
+      usd,
       hashscanUrl: hashscanTxUrl(t.transaction_id),
     });
+  for (const t of txs) {
+    const moves = (t.token_transfers ?? []).filter((x) => x.token_id === tokenId);
+    const received = moves.find((x) => x.account === merchant && x.amount > 0);
+    if (received) {
+      const decimals = HEDERA_TOKENS[tokenId]?.decimals ?? 0;
+      sale(t, moves.find((x) => x.amount < 0)?.account ?? "unknown", received.amount, tokenId, received.amount / 10 ** decimals);
+      continue;
+    }
+    if (!hbarUsd) continue;
+    const got = (t.transfers ?? []).find((x) => x.account === merchant && x.amount > 0);
+    const payer = got && (t.transfers ?? []).find((x) => x.amount === -got.amount);
+    if (got && payer) sale(t, payer.account, got.amount, "0.0.0", (got.amount / 1e8) * hbarUsd);
   }
   return sales;
 }
@@ -62,6 +80,8 @@ export function parseMirrorSales(json: unknown, merchant: string, tokenId = HEDE
 export async function listHederaSales(args: {
   merchant: string;
   tokenId?: string;
+  /** USD per HBAR: set it to count native-HBAR sales too */
+  hbarUsd?: number;
   mirrorUrl?: string;
   limit?: number;
   fetchImpl?: typeof fetch;
@@ -73,7 +93,7 @@ export async function listHederaSales(args: {
   url.searchParams.set("limit", String(args.limit ?? 50));
   const res = await (args.fetchImpl ?? fetch)(url);
   if (!res.ok) throw new Error(`mirror node ${res.status}`);
-  return parseMirrorSales(await res.json(), args.merchant, args.tokenId);
+  return parseMirrorSales(await res.json(), args.merchant, args.tokenId, args.hbarUsd);
 }
 
 /** One entry of the agent's spending audit log, as written to a Hedera Consensus Service topic. */

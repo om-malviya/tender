@@ -36,7 +36,7 @@ export function DashboardPage() {
   const units = (raw: string, decimals: number) => Number(raw) / 10 ** decimals;
   const volume = paid.reduce((s, i) => s + units(i.amount, settleDecimals(i)), 0);
   const refunded = invoices.reduce((s, i) => s + units(i.refunded, settleDecimals(i)), 0);
-  const agentUsd = sales.reduce((s, x) => s + units(x.amount, x.decimals), 0);
+  const agentUsd = sales.reduce((s, x) => s + x.usd, 0);
   const swapped = paid.filter((i) => i.paidWith && i.paidWith.toLowerCase() !== i.settleToken.toLowerCase()).length;
 
   return (
@@ -125,7 +125,7 @@ export function DashboardPage() {
                       {amount(i.amount, settle?.decimals ?? 6)} <span className="muted">{settle?.symbol}</span>
                     </td>
                     <td>
-                      <StatusPill status={i.status} refunded={i.refunded !== "0"} />
+                      <StatusPill status={i.status} refunded={i.refunded} amount={i.amount} />
                     </td>
                     <td className="muted">{age(i.paidAt ?? i.createdAt)}</td>
                   </tr>
