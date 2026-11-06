@@ -8,6 +8,7 @@ import {
   hashscanTxUrl,
   loadChains,
   parseMirrorSales,
+  parseTopicMessages,
   parseTradingApiQuote,
   bufferForImpact,
   encodeHookData,
@@ -335,5 +336,22 @@ describe("Hedera mirror node + CSV", () => {
     expect(csv.split("\n")[0]).toBe("date_utc,rail,invoice_id,order_ref,status,currency,amount,refunded,net,payer,paid_with,paid_with_amount,tx");
     expect(csv).toContain("hedera-x402");
     expect(csv).toContain(",0.05,0,0.05,0.0.5555,USDC,0.05,");
+  });
+});
+
+describe("HCS audit log", () => {
+  it("decodes topic messages newest first and parses JSON bodies", () => {
+    const body = { kind: "purchase", merchant: "localhost:8788", amountUsd: 0.05, txId: "0.0.5-1-1" };
+    const json = {
+      messages: [
+        { sequence_number: 1, consensus_timestamp: "1730700000.1", payer_account_id: "0.0.5", message: Buffer.from(JSON.stringify(body)).toString("base64") },
+        { sequence_number: 2, consensus_timestamp: "1730700050.1", payer_account_id: "0.0.5", message: Buffer.from("not json").toString("base64") },
+      ],
+    };
+    const entries = parseTopicMessages(json);
+    expect(entries.map((e) => e.sequence)).toEqual([2, 1]);
+    expect(entries[1]!.body).toMatchObject({ kind: "purchase", amountUsd: 0.05 });
+    expect(entries[0]!.body).toBeNull();
+    expect(entries[0]!.raw).toBe("not json");
   });
 });

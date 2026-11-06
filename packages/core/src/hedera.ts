@@ -75,3 +75,41 @@ export async function listHederaSales(args: {
   if (!res.ok) throw new Error(`mirror node ${res.status}`);
   return parseMirrorSales(await res.json(), args.merchant, args.tokenId);
 }
+
+/** One entry of the agent's spending audit log, as written to a Hedera Consensus Service topic. */
+export interface AuditEntry {
+  sequence: number; // HCS sequence number (gapless, ordered by consensus)
+  consensusAt: number; // unix seconds
+  payer: string; // the account that submitted the message
+  /** the message body the agent wrote (see agent/src/run.ts); unknown shapes are kept raw */
+  body: { kind?: string; merchant?: string; amountUsd?: number; txId?: string; decision?: string; reason?: string; at?: string; [k: string]: unknown } | null;
+  raw: string;
+}
+
+/** Decodes mirror-node topic messages (base64 bodies) into audit entries, newest first. */
+export function parseTopicMessages(json: unknown): AuditEntry[] {
+  const msgs = (json as { messages?: { sequence_number: number; consensus_timestamp: string; payer_account_id: string; message: string }[] })?.messages ?? [];
+  return msgs
+    .map((m) => {
+      // base64 -> UTF-8 without Node's Buffer, so this also runs in the browser build
+      const raw = new TextDecoder().decode(Uint8Array.from(atob(m.message), (c) => c.charCodeAt(0)));
+      let body: AuditEntry["body"] = null;
+      try {
+        body = JSON.parse(raw);
+      } catch {}
+      return { sequence: m.sequence_number, consensusAt: Number(m.consensus_timestamp), payer: m.payer_account_id, body, raw };
+    })
+    .sort((a, b) => b.sequence - a.sequence);
+}
+
+/** The audit topic's messages from the public mirror node (no keys needed). */
+export async function listAuditLog(args: { topicId: string; mirrorUrl?: string; limit?: number; fetchImpl?: typeof fetch }): Promise<AuditEntry[]> {
+  const url = new URL(`/api/v1/topics/${args.topicId}/messages`, args.mirrorUrl ?? HEDERA_TESTNET_MIRROR);
+  url.searchParams.set("order", "desc");
+  url.searchParams.set("limit", String(args.limit ?? 50));
+  const res = await (args.fetchImpl ?? fetch)(url);
+  if (!res.ok) throw new Error(`mirror node ${res.status}`);
+  return parseTopicMessages(await res.json());
+}
+
+export const hashscanTopicUrl = (topicId: string, network = "testnet") => `https://hashscan.io/${network}/topic/${topicId}`;
