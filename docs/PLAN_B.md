@@ -457,6 +457,22 @@ X402_FACILITATOR_URL=https://api.testnet.blocky402.com
 
 ---
 
+## 6b. Hosting decision (Nov 6): AWS for the backend, Cloudflare for the frontend
+
+| Part | Where | How | Why |
+|---|---|---|---|
+| **Tender API** (`server`) | **AWS App Runner**, region ap-south-1 (Mumbai) | container from one Docker image, `npm run server`, port 8787, public https URL | managed HTTPS, no servers to maintain, cheapest AWS way to run a container 24/7 |
+| **Demo shop** (`demo-shop`) | **AWS App Runner**, second service | same image, `npm run shop`, port 8788 | separate URL = separate merchant site, as the Whitechain judges expect |
+| **Agent** | laptop (`npm run agent`) or a one-off container | not a service: it runs when the demo needs it | nothing to keep running |
+| **Frontend** (`app`, incl. the `tender.js` widget) | **Cloudflare Pages** | static Vite build with `VITE_API_URL` baked in, `_redirects` for SPA routing and an `/api/*` proxy to App Runner | free, fast, global; the widget is served from the same origin |
+| **Contracts** | Unichain Sepolia, Whitechain Sepolia | `scripts/deploy-unichain.sh`, `scripts/deploy-whitechain.sh` | per sponsor requirements |
+
+Files: `Dockerfile`, `scripts/deploy-aws.sh` (ECR push + App Runner create/update for both services), `scripts/deploy-cloudflare.sh` (build + `wrangler pages deploy`), `.env.deploy.example` (runtime env for the containers).
+
+Needed from the user, only when we reach this step: an AWS IAM user access key (ECR + App Runner + IAM role creation), a Cloudflare API token with Pages:Edit and the account id. Secrets go into `.env.deploy` (git-ignored); nothing is committed.
+
+Order: contracts first (so the env has addresses) → `deploy-aws.sh` (prints the API and shop URLs) → `deploy-cloudflare.sh` with the API URL → re-run `deploy-aws.sh` once with `SHOP_URL`/`TENDER_APP_URL` filled in.
+
 ## 7. Repo layout (`tender/`, public, MIT)
 ```
 tender/

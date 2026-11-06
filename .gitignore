@@ -23,3 +23,5 @@ agent/ledger.json
 .fork/
 .env.fork
 
+
+.env.deploy

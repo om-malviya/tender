@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Frontend on Cloudflare Pages: static Vite build + the tender.js widget, SPA routing, API URL baked in.
+# Needs: CLOUDFLARE_API_TOKEN (Pages:Edit) and CLOUDFLARE_ACCOUNT_ID in the environment, and the API's
+# public URL (from deploy-aws.sh) in VITE_API_URL.
+#   VITE_API_URL=https://xxx.awsapprunner.com bash scripts/deploy-cloudflare.sh   -> prints the pages.dev URL
+set -euo pipefail
+cd "$(dirname "$0")/.."
+: "${VITE_API_URL:?set VITE_API_URL to the Tender API's https URL}"
+PROJECT=${CF_PAGES_PROJECT:-tender}
+
+(cd app && VITE_API_URL="$VITE_API_URL" npx vite build)
+printf '/api/*  %s/api/:splat  200\n/*  /index.html  200\n' "$VITE_API_URL" > app/dist/_redirects   # SPA fallback + API proxy
+
+npx --yes wrangler@4 pages project list 2>/dev/null | grep -q "^│ $PROJECT " || npx --yes wrangler@4 pages project create "$PROJECT" --production-branch main >/dev/null
+npx --yes wrangler@4 pages deploy app/dist --project-name "$PROJECT" --branch main --commit-dirty=true 2>&1 | grep -E "https://" | tail -1
