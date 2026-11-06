@@ -28,3 +28,4 @@ agent/ledger.json
 .wrangler/
 .vitest/
 contracts/broadcast/
+agent/ledger*.json
