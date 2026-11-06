@@ -22,7 +22,7 @@ Tender integrates the **Uniswap v4 AMM, the v4 Quoter and the Uniswap API**, and
 - **Basket payments**: several tokens, one invoice, one unlock.
 - Public repo, `FEEDBACK.md` (written while building: PathKey direction for exact output, `afterSwapReturnDelta` scope, hook deployment from a script, testnet pool prices), feedback form submitted. README points to every contract and line.
 
-Proof: any-token payment _TBD_, hook payment via generic router _TBD_, on Unichain Sepolia.
+Proof on Unichain Sepolia (contracts verified on Blockscout): any-token payment https://unichain-sepolia.blockscout.com/tx/0x7dc679a80d3a49daa3f96a6d2e80f96af9efc23df5592d6a671af78da9f52fe9 (merchant received exactly 0.10 USDC, contract balance 0 after), hook payment through Uniswap's PoolSwapTest router https://unichain-sepolia.blockscout.com/tx/0x5445265c0fdbb79c5afc4f745dd9d1b3df5418584ad471f6389fb424cec857a8. UniswapCheckout https://unichain-sepolia.blockscout.com/address/0x013afebd608074993d87c299952116b5c3135795, CheckoutHook https://unichain-sepolia.blockscout.com/address/0x40a7409c828e62e4278ff8e4a9f30bc6ecf88044.
 
 ## Whitechain: Operate, Stablecoin Payments for Business
 

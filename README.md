@@ -14,9 +14,9 @@ ETHGlobal Mumbai 2026 · solo submission · tracks: Uniswap Foundation (Build wi
 
 | Network | Contract | Address | Proof |
 |---|---|---|---|
-| Unichain Sepolia (1301) | `UniswapCheckout` | _TBD_ | any-token payment tx: _TBD_ |
-| Unichain Sepolia (1301) | `CheckoutHook` (v4 hook) | _TBD_ | payment via a generic router through the hooked pool: _TBD_ |
-| Unichain Sepolia (1301) | `DemoToken` | _TBD_ | |
+| Unichain Sepolia (1301) | `UniswapCheckout` (verified) | [`0x013a…5795`](https://unichain-sepolia.blockscout.com/address/0x013afebd608074993d87c299952116b5c3135795) | any-token payment, invoice #1 paid in DEMO via DEMO→WETH→USDC, merchant got exactly 0.10 USDC: [`0x7dc679a8…`](https://unichain-sepolia.blockscout.com/tx/0x7dc679a80d3a49daa3f96a6d2e80f96af9efc23df5592d6a671af78da9f52fe9) |
+| Unichain Sepolia (1301) | `CheckoutHook` (v4 hook, verified) | [`0x40a7…8044`](https://unichain-sepolia.blockscout.com/address/0x40a7409c828e62e4278ff8e4a9f30bc6ecf88044) | invoice #2 paid through Uniswap's `PoolSwapTest` router; the hook settled it: [`0x5445265c…`](https://unichain-sepolia.blockscout.com/tx/0x5445265c0fdbb79c5afc4f745dd9d1b3df5418584ad471f6389fb424cec857a8) |
+| Unichain Sepolia (1301) | `DemoToken` (verified) | [`0x29ad…339c`](https://unichain-sepolia.blockscout.com/address/0x29adcdf890ad23c7877f51a4005555a93cea339c) | the "wrong token" payers hold; demo pools: DEMO/WETH, DEMO/USDC (thin), WETH/USDC, plus two hooked pools |
 | Whitechain Sepolia (1874) | `CheckoutCore` (verified) | _TBD_ | USDT payment: _TBD_ · partial refund: _TBD_ |
 | Hedera testnet | x402 endpoint `GET /api/agent/dataset` | facilitator: Blocky402 | settled payment: _TBD_ (HashScan: _TBD_) |
 
