@@ -1378,3 +1378,20 @@ The **browser** version passes too ([ui.e2e.ts L95](tender/e2e/ui.e2e.ts#L95)): 
 - "How do I know the merchant got exactly the amount?" → "Open the any-token transaction: the USDC transfer to the merchant is exactly 100000 units. The contract checks this before finishing, and our tests assert it for any amount (fuzzed)."
 - "Is the hook really router-agnostic?" → "Proof 2 was sent to Uniswap's own test router. Our checkout contract isn't in the call; the pool's hook settled the invoice."
 - "Why is liquidity so small?" → "Testnet faucets give 0.01 ETH a day. We seed our own pools, and the ranking measures their real depth; the same code works on deeper pools."
+
+---
+
+### B27. Live on Whitechain Sepolia (Nov 6)
+**What's live:** `CheckoutCore` at `0x013a…5795`, **verified** on Whitechain's explorer with exactly the compiler settings their docs require (solc 0.8.30, `prague`). Record: [deployments/whitechain-sepolia.env](tender/deployments/whitechain-sepolia.env).
+- **Invoice #1** (1.00 USDT): approve + `payInvoice`, then a **0.40 partial refund**. On-chain afterwards: status Paid, `refunded = 400000`, contract holds 0 USDT.
+- **Invoice #2** (0.50 USDT): paid in **one transaction with an EIP-2612 permit signature**, with no separate approve. [scripts/permit-proof.ts](tender/scripts/permit-proof.ts) first checks that the allowance is **0**. `payInvoiceWithPermit` swallows a failed permit in `try/catch`, so with zero allowance the payment can *only* succeed if the permit worked. That's how the proof rules out luck.
+- Same address as on Unichain (`0x013a…5795`): a contract's address comes from the deployer's address and its transaction count. Both chains happened to line up.
+
+**Where the test USDT came from.** The Whitechain faucet gives only WBT (2 per day), and their rule says self-minted tokens don't count. Reading the USDT contract's transfer history showed other teams **swapping WBT for USDT on the testnet DEX** (a Uniswap-v3-style WBT/USDT pool holding ~93k USDT). We simulated first, then swapped **0.15 WBT → 10.94 USDT** with a 2% minimum-output guard.
+
+**Budget:** deploy + verify + 3 proof transactions + the permit payment cost about **0.008 WBT**. One full demo cycle costs about 0.002 WBT, so the remaining 1.84 WBT covers hundreds of demo payments.
+
+**Judge questions**
+- "Is that real Whitechain USDT?" → "Yes, the official contract `0xcedf…55a7`. We got it by swapping WBT on the testnet DEX, the same way other teams did; the swap transaction is in our deployments file."
+- "Show me the refund." → "Invoice #1: paid 1.00 USDT, then the merchant refunded 0.40. The refund is pulled from the merchant's wallet back to the original payer, recorded on-chain, and it can never exceed what was paid."
+- "Why does the permit matter for a merchant?" → "The customer signs once and pays once: one transaction instead of two, which is how card checkouts feel."
