@@ -7,7 +7,7 @@ A merchant creates an invoice for an exact stablecoin amount. The customer pays 
 ETHGlobal Mumbai 2026 · team project · team: [om-malviya](https://github.com/om-malviya), [parthdagia05](https://github.com/parthdagia05) · tracks: Uniswap Foundation (Build with Uniswap), Whitechain (Operate), Hedera (AI Agents That Pay: x402).
 
 - Videos (scripts in [`docs/VIDEOS.md`](docs/VIDEOS.md)): ETHGlobal _[link]_ · Uniswap _[link]_ · Whitechain _[link]_ · Hedera _[link]_
-- Live app: _[link after deployment]_ · Demo shop: _[link]_
+- Website: [tender.tender-app.workers.dev](https://tender.tender-app.workers.dev) (the landing page; the app pages need the API, which isn't hosted: run the full app with `bash scripts/dev-fork.sh`, or against the live testnets with `bash scripts/live-local.sh`)
 - Build timeline: see [Build timeline](#build-timeline) (the team had a conference clash and informed the organisers; work started before kickoff and is documented commit by commit).
 
 ## Deployed contracts and proof
@@ -24,27 +24,29 @@ Uniswap contracts used (not ours): v4 PoolManager `0x00B036B58a818B1BC34d502D3fE
 
 ## Where we use each sponsor (for reviewers)
 
+Every link opens the exact lines on GitHub.
+
 **Uniswap v4**
-- Exact-output multi-hop swap directly on the PoolManager (unlock → swap backwards per hop → settle → take to the merchant): [`contracts/src/UniswapCheckout.sol`](contracts/src/UniswapCheckout.sol) `_exactOutCallback` (L237–254), `_swapExactOut` (L280), `_settle` (L300), `_poolKey` (L309).
-- Basket payments (several tokens, one invoice, exact-input legs in one unlock): `payWithBasket` (L140), `_basketCallback` (L257).
-- **CheckoutHook**, a v4 hook (`afterSwap` + `afterSwapReturnDelta`) that settles an invoice from inside any router's swap: [`contracts/src/CheckoutHook.sol`](contracts/src/CheckoutHook.sol) `afterSwap` (L63–88). Address mining for the hook: [`contracts/script/DeployUnichain.s.sol`](contracts/script/DeployUnichain.s.sol) `_mineSalt` (L60).
-- v4 Quoter for route ranking: [`packages/core/src/quoter.ts`](packages/core/src/quoter.ts) `onchainQuoter` (L69). Trading API: [`packages/core/src/tradingApi.ts`](packages/core/src/tradingApi.ts).
-- Ranking, impact-sized slippage, split routing, hook routes: [`packages/core/src/rank.ts`](packages/core/src/rank.ts) (`bufferForImpact` L70, hook routes L157, split L190).
-- Pools seeded on Unichain Sepolia (plain + hooked): [`contracts/script/SeedPools.s.sol`](contracts/script/SeedPools.s.sol).
-- Feedback: [`FEEDBACK.md`](FEEDBACK.md).
+- **Exact-output payment straight on the PoolManager**, in [`contracts/src/UniswapCheckout.sol`](contracts/src/UniswapCheckout.sol): [`payWithToken` L80–96](contracts/src/UniswapCheckout.sol#L80-L96) (entry, the payer's price cap), [`unlockCallback` L229–234](contracts/src/UniswapCheckout.sol#L229-L234) (only the PoolManager may call it), [`_exactOutCallback` L239–256](contracts/src/UniswapCheckout.sol#L239-L256) (unlock → swap each hop backwards with exact output → `settle` the input → `take` the USDC straight to the merchant), [`_payExactOut` L106–133](contracts/src/UniswapCheckout.sol#L106-L133) (asserts the merchant got exactly the amount and the contract kept nothing), helpers [`_swapExactOut` L282–289](contracts/src/UniswapCheckout.sol#L282-L289), [`_settle` L302–307](contracts/src/UniswapCheckout.sol#L302-L307), [`_poolKey` L311–322](contracts/src/UniswapCheckout.sol#L311-L322).
+- **Basket payments** (several tokens, one invoice, one unlock): [`payWithBasket` L142–156](contracts/src/UniswapCheckout.sol#L142-L156), [`_basketCallback` L259–279](contracts/src/UniswapCheckout.sol#L259-L279), [`_payMerchantAndReturnExcess` L200–208](contracts/src/UniswapCheckout.sol#L200-L208); planner [`buildBasket` L33–90](packages/core/src/basket.ts#L33-L90) in [`basket.ts`](packages/core/src/basket.ts).
+- **CheckoutHook**, a v4 hook (`afterSwap` + `afterSwapReturnDelta`) that settles an invoice from inside any router's swap, in [`contracts/src/CheckoutHook.sol`](contracts/src/CheckoutHook.sol): [`afterSwap` L63–89](contracts/src/CheckoutHook.sol#L63-L89), permissions checked at deploy [`constructor` L36–58](contracts/src/CheckoutHook.sol#L36-L58); the invoice side [`settleFromHook` L158–166](contracts/src/CheckoutCore.sol#L158-L166) in `CheckoutCore.sol`; hook address mining [`_mineSalt` L60–68](contracts/script/DeployUnichain.s.sol#L60-L68) in `DeployUnichain.s.sol`.
+- **v4 Quoter** for ranking, batched through Multicall3: [`onchainQuoter` L74–121](packages/core/src/quoter.ts#L74-L121) in [`quoter.ts`](packages/core/src/quoter.ts). Trading API: [`tradingApi.ts`](packages/core/src/tradingApi.ts).
+- **Ranking**: [`rankRoutes` L86–278](packages/core/src/rank.ts#L86-L278) in [`rank.ts`](packages/core/src/rank.ts); impact-sized buffer [`bufferForImpact` L70](packages/core/src/rank.ts#L70); hook routes [`hooked pools` L157](packages/core/src/rank.ts#L157); split routes [`split` L212](packages/core/src/rank.ts#L212); vetted pools only [`candidatePaths` L29–41](packages/core/src/paths.ts#L29-L41) in [`paths.ts`](packages/core/src/paths.ts).
+- Pools seeded on Unichain Sepolia (plain + hooked): [`contracts/script/SeedPools.s.sol`](contracts/script/SeedPools.s.sol). Feedback: [`FEEDBACK.md`](FEEDBACK.md).
 
 **Whitechain**
-- `CheckoutCore` (invoices, `payInvoice`, `payInvoiceWithPermit`, partial `refund`, `cancel`): [`contracts/src/CheckoutCore.sol`](contracts/src/CheckoutCore.sol). Compiled with solc 0.8.30 / prague for explorer verification (`[profile.whitechain]` in [`contracts/foundry.toml`](contracts/foundry.toml)).
-- Drop-in widget (one `<script>` + one call): [`app/public/tender.js`](app/public/tender.js). The demo shop's whole integration is 23 lines: [`demo-shop/public/index.html`](demo-shop/public/index.html) (from the "Tender integration" comment).
-- Merchant view (invoices on both chains, refund, cancel, CSV): [`app/src/pages/MerchantPage.tsx`](app/src/pages/MerchantPage.tsx); CSV: [`packages/core/src/csv.ts`](packages/core/src/csv.ts).
+- **`CheckoutCore`** (deployed and verified on Whitechain Sepolia), in [`contracts/src/CheckoutCore.sol`](contracts/src/CheckoutCore.sol): [`createInvoice` L87–107](contracts/src/CheckoutCore.sol#L87-L107), [`payInvoice` L138–140](contracts/src/CheckoutCore.sol#L138-L140), [`payInvoiceWithPermit` L145–149](contracts/src/CheckoutCore.sol#L145-L149) (one signature, one transaction), [`refund` L111–121](contracts/src/CheckoutCore.sol#L111-L121) (partial, pulled from the merchant to the original payer, never more than paid), [`cancel` L124–131](contracts/src/CheckoutCore.sol#L124-L131). Compiled with solc 0.8.30 / prague for explorer verification (`[profile.whitechain]` in [`contracts/foundry.toml`](contracts/foundry.toml)).
+- **Drop-in widget** (one `<script>` + one call): [`app/public/tender.js`](app/public/tender.js). The demo shop's whole integration is 23 lines: [`demo-shop/public/index.html` from L55](demo-shop/public/index.html#L55); the shop shows it on its own page.
+- **Merchant view** (invoices on both chains, refund, cancel, CSV): [`app/src/pages/MerchantPage.tsx`](app/src/pages/MerchantPage.tsx); CSV [`toCsv` L29–31](packages/core/src/csv.ts#L29-L31), [`invoiceRows` L35–63](packages/core/src/csv.ts#L35-L63) in [`csv.ts`](packages/core/src/csv.ts).
 - **Why on-chain stablecoin settlement on Whitechain:** the merchant is paid in USDT with finality in seconds, straight into their own wallet, with a public receipt the customer can verify and refunds that leave an on-chain record. A card or bank rail can't give a small merchant final settlement, no chargeback reversals, a verifiable receipt and an exportable ledger from the same payment.
 - Feedback: [`WHITECHAIN_FEEDBACK.md`](WHITECHAIN_FEEDBACK.md).
 
 **Hedera x402**
-- Paywalled endpoint (`@x402/hono` + Hedera exact scheme, facilitator Blocky402): [`demo-shop/server/app.ts`](demo-shop/server/app.ts) (the `paymentMiddleware` block). Discovery manifest: `/.well-known/tender.json`.
-- Autonomous agent with spending controls (allowlist, per-merchant cap, total budget, human approval above a threshold): [`agent/src/run.ts`](agent/src/run.ts), policy in [`agent/src/policy.ts`](agent/src/policy.ts), limits in [`agent/policy.json`](agent/policy.json).
-- Priced in HTS USDC (`0.0.429274`) by default; `X402_ASSET=hbar` prices the same endpoint in native HBAR at a set rate. **The live proof settled in HBAR**: Circle's Hedera testnet faucet wasn't delivering USDC to anyone on Nov 7 (we checked 2,500 recent transfers). The agent only accepts HBAR because its policy names a rate, and the x402 library's own spend controls cap each HBAR payment at the same limit.
-- USDC sales appear in the merchant dashboard from the mirror node ([`packages/core/src/hedera.ts`](packages/core/src/hedera.ts)); HBAR sales are not listed there yet.
+- **Paywalled endpoint** (`@x402/hono` + Hedera exact scheme, facilitator Blocky402): [`paymentMiddleware block` L46–66](demo-shop/server/app.ts#L46-L66) in [`demo-shop/server/app.ts`](demo-shop/server/app.ts). Discovery manifest: `/.well-known/tender.json`.
+- **Autonomous agent with spending controls** (allowlist, per-merchant cap, total budget, human approval above a threshold): the policy [`decide` L34–45](agent/src/policy.ts#L34-L45) in [`agent/src/policy.ts`](agent/src/policy.ts), checked on the real 402 price right before signing [`onBeforePaymentCreation` L66–84](agent/src/run.ts#L66-L84) in [`agent/src/run.ts`](agent/src/run.ts); limits in [`agent/policy.json`](agent/policy.json).
+- **HCS audit log** of every decision: [`audit` L30–41](agent/src/run.ts#L30-L41) in `run.ts`.
+- Priced in HTS USDC (`0.0.429274`) by default; `X402_ASSET=hbar` prices the same endpoint in native HBAR at a set rate ([`requirementToUsd` L52–61](agent/src/policy.ts#L52-L61) on the agent side). **The live proof settled in HBAR**: Circle's Hedera testnet faucet wasn't delivering USDC to anyone on Nov 7 (we checked 2,500 recent transfers). The agent only accepts HBAR because its policy names a rate, and the x402 library's own spend controls cap each HBAR payment at the same limit.
+- Agent sales (USDC and HBAR) appear in the merchant dashboard from the public mirror node: [`parseMirrorSales` L48–77](packages/core/src/hedera.ts#L48-L77) in [`hedera.ts`](packages/core/src/hedera.ts).
 
 ## Architecture
 
@@ -75,6 +77,23 @@ bash scripts/dev-fork.sh                                  # the whole product: h
 `dev-fork.sh` starts anvil forks of both testnets (real Uniswap, real USDC/USDT), deploys with the same scripts used for the real testnets, funds two dev wallets, and runs the API, the shop and the app. In the app, "Connect wallet" offers *Dev wallet (payer)* and *Dev wallet (merchant)*.
 
 Deploy for real: `.env.example` lists every variable; scripts are `contracts/script/DeployUnichain.s.sol`, `SeedPools.s.sol`, `DeployWhitechain.s.sol`.
+
+## Hedera x402: setup and payment flow
+
+**Setup** (Hedera testnet; nothing else needs to run):
+1. Create a testnet account at [portal.hedera.com](https://portal.hedera.com) (ECDSA) for the **agent**, and put it in `.env`: `HEDERA_AGENT_ID=0.0.…`, `HEDERA_AGENT_KEY=…` (HEX or DER). Give it test USDC from [faucet.circle.com](https://faucet.circle.com) (Hedera Testnet), or use HBAR (see below).
+2. A second account receives the payments: `HEDERA_MERCHANT_ID=0.0.…` (it only needs to exist and auto-associate tokens).
+3. Run the whole live proof: `bash scripts/hedera-live.sh` (settles in USDC) or `X402_ASSET=hbar bash scripts/hedera-live.sh` (settles in native HBAR). It starts the shop with the paywall, runs the agent three times, and writes the HashScan ids to `deployments/hedera-testnet.env`.
+
+**Payment flow** (one purchase, no human anywhere):
+1. **Discover.** The agent reads the shop's `/.well-known/tender.json`: what's for sale, the price, the network.
+2. **402.** It calls `GET /api/agent/dataset`. The paywall answers **HTTP 402** with the terms: amount, asset (USDC `0.0.429274` or HBAR `0.0.0`), the merchant's account, and the facilitator's fee-payer account (Blocky402, `0.0.7162784`).
+3. **Policy, then sign.** Before signing, the agent converts the price to dollars and checks its spending policy: allowlist, per-merchant cap, total budget, human approval above a threshold. The x402 library's own spend controls cap the payment again. If anything fails, it stops and **nothing is signed**.
+4. **Settle.** The agent signs a transfer to the merchant; the facilitator verifies it, submits it to Hedera and pays the network fee; the shop returns the data with the settled transaction id.
+5. **Audit.** The agent writes the decision (`purchase` with the transaction id, or `refused` with the reason) to its HCS topic.
+6. **Ledger.** The merchant dashboard reads the sale back from the public mirror node.
+
+Live proof: two purchases settled, the third refused by the per-merchant cap, all in topic [`0.0.11345065`](https://hashscan.io/testnet/topic/0.0.11345065) (links in the table at the top).
 
 ## Tests
 
@@ -124,9 +143,9 @@ See [`AI_USAGE.md`](AI_USAGE.md): which tools, which parts, and which decisions 
 - Nov 4: plan and research; contracts (`CheckoutCore`, `UniswapCheckout`), 31 Foundry tests; core ranker, API, shop server, agent; local-fork end-to-end.
 - Nov 5: frontend; Whitechain tested on a local fork (permit confirmed); hardcoded values removed.
 - Nov 6: `CheckoutHook` + address mining; impact-sized slippage and split routing; frontend second pass (Linear + MetaMask direction), landing page; docs.
-- Nov 6–7: testnet deployments, real payments, submission.
+- Nov 6–7: live deployments on Unichain Sepolia, Whitechain Sepolia and Hedera testnet with real payments; browser QA against the live testnets; fixes from it.
 
-Commit history is the detailed record.
+**About the commit history:** the first commit (Nov 6, 15:39, 78 files) holds the work of Nov 4–6 above, built before we started committing. Everything after it, about 60 commits, is the record of the deployments, the bugs found on the live chains, their fixes and tests, and the docs. We didn't rewrite timestamps to make it look more gradual.
 
 ## License
 
