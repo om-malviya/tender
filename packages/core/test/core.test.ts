@@ -3,6 +3,7 @@ import { zeroAddress, type Address, type PublicClient } from "viem";
 import {
   buildBasket,
   candidatePaths,
+  hookedPaths,
   csvCell,
   hederaRows,
   hashscanTxUrl,
@@ -83,6 +84,38 @@ describe("paths", () => {
     const demo = candidatePaths(DEMO, USDC, WETH, allowed);
     expect(demo).toHaveLength(2); // direct 0.30% and DEMO-0.30%->WETH-0.05%->USDC
     expect(candidatePaths(WETH, USDC, WETH, allowed)).toEqual([[{ tokenIn: WETH, fee: 500, tickSpacing: 10 }]]);
+  });
+
+  it("refuses a pool with the right tokens but an unvetted fee tier or tick spacing", () => {
+    // On the real testnet the WETH/USDC 0.30% pool priced WETH absurdly: only the vetted 0.05%/10 pool may be used.
+    const allowed = [{ a: WETH, b: USDC, fee: 500, tickSpacing: 10 }];
+    const weth = candidatePaths(WETH, USDC, WETH, allowed);
+    expect(weth).toEqual([[{ tokenIn: WETH, fee: 500, tickSpacing: 10 }]]);
+    expect(weth.flat().some((h) => h.fee === 3000 || h.fee === 10000)).toBe(false);
+    // same fee, different tick spacing = a different pool: refused too
+    expect(candidatePaths(WETH, USDC, WETH, [{ a: WETH, b: USDC, fee: 500, tickSpacing: 60 }])).toEqual([]);
+  });
+
+  it("keeps hooked and plain pools apart: hooked entries never become plain routes, and vice versa", () => {
+    const allowed = [
+      { a: DEMO, b: USDC, fee: 3000, tickSpacing: 60, hooks: HOOK },
+      { a: WETH, b: USDC, fee: 500, tickSpacing: 10 },
+    ];
+    expect(candidatePaths(DEMO, USDC, WETH, allowed)).toEqual([]); // the only DEMO/USDC pool is hooked
+    expect(hookedPaths(DEMO, USDC, allowed)).toEqual([[{ tokenIn: DEMO, fee: 3000, tickSpacing: 60, hooks: HOOK }]]);
+    expect(hookedPaths(WETH, USDC, allowed)).toEqual([]); // WETH/USDC here is plain
+  });
+
+  it("the ranker never even quotes an unvetted pool", async () => {
+    const asked: string[] = [];
+    const spy: Quoter = {
+      exactOut: async (hops, settle, amt) => (asked.push(hops.map((h) => h.fee).join(">")), fakeQuoter.exactOut(hops, settle, amt)),
+      exactIn: async (hops, settle, amt) => (asked.push(hops.map((h) => h.fee).join(">")), fakeQuoter.exactIn(hops, settle, amt)),
+    };
+    await rankRoutes({ client: fakeClient({ balances: [0n, 10n ** 18n, 100n * 10n ** 18n] }), cfg, invoiceId: 1n, payer: "0x000000000000000000000000000000000000dEaD", quoter: spy, now: 1n });
+    expect(asked.length).toBeGreaterThan(0);
+    // cfg's allowlist is the seeded pools: WETH/USDC 0.05%, DEMO/WETH 0.30%, DEMO/USDC 0.30%
+    for (const fees of asked) expect(["500", "3000", "3000>500"]).toContain(fees);
   });
 
   it("maps our Hop[] to the Quoter's PathKey[] for exact output (rename) and exact input (shifted)", () => {
