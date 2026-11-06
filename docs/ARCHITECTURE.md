@@ -124,7 +124,7 @@ The shop's `GET /api/agent/dataset` is behind an x402 paywall (`@x402/hono` + He
 Not worth doing before the deadline: on-chain agent spending limits, UniswapX intents, cross-chain settlement, v3 routes.
 
 ## 4. Numbers to quote
-- Tests: 41 Solidity (incl. 16k-call invariants, 1k-run fuzz), 47 TypeScript, 2 local e2e flows, 1 browser flow.
+- Tests: 44 Solidity checks (incl. 16k-call invariants, 1k-run fuzz), 48 TypeScript, 2 local e2e flows, 1 browser flow.
 - Gas: `payWithToken` ~200k (1 hop) / ~250k (2 hops); basket ~130k per leg; hook swap ~180k; `createInvoice` ~147k.
 - Ranking: ~12 candidate paths per token, quotes refreshed every 20 s, buffer 0.25–3%.
 - Hook address mining: 1 in 16,384 salts; dry-run found one on a fork.

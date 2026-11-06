@@ -144,7 +144,7 @@ export function LandingPage() {
             <span>via Uniswap swaps</span>
           </div>
           <div>
-            <b>41 + 47</b>
+            <b>44 + 48</b>
             <span>Solidity + TypeScript tests</span>
           </div>
           <div>
