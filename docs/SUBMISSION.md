@@ -10,7 +10,7 @@ A merchant creates an invoice for an exact stablecoin amount. The customer pays 
 
 What's new: a **Uniswap v4 CheckoutHook** that settles invoices from inside any router's swap (the pool itself is the payment terminal); **basket payments** (one invoice from several tokens); a visible **ranking panel** with impact-sized slippage and split routing; and three rails for one merchant: any-token on Unichain, **USDT invoices, refunds and CSV export on Whitechain**, and **x402 sales to AI agents on Hedera**, all in one dashboard.
 
-Non-custodial, no admin: the contracts hold zero tokens after every call. 44 Solidity checks (real v4 PoolManager, fuzz, invariants), 55 TypeScript tests, local-fork and browser end-to-end runs.
+Non-custodial, no admin: the contracts hold zero tokens after every call. 44 Solidity checks (real v4 PoolManager, fuzz, invariants), 56 TypeScript tests, local-fork and browser end-to-end runs.
 
 ## Uniswap Foundation: Build with Uniswap
 

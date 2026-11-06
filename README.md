@@ -67,7 +67,7 @@ Full walkthrough, design trade-offs and backlog: [`docs/ARCHITECTURE.md`](docs/A
 ```bash
 npm install
 cd contracts && forge install && forge test && cd ..     # 44 Solidity checks (forge prints 41: 4 invariants run as one campaign)
-npx vitest run                                            # 55 TypeScript tests
+npx vitest run                                            # 56 TypeScript tests
 bash scripts/e2e-fork.sh                                  # end-to-end on local copies of Unichain + Whitechain
 bash scripts/dev-fork.sh                                  # the whole product: http://localhost:5173 and :8788
 ```
@@ -78,7 +78,7 @@ Deploy for real: `.env.example` lists every variable; scripts are `contracts/scr
 
 ## Tests
 
-Every category has at least three independent checks, so a pass isn't a coincidence. **99 automated checks** (44 Foundry + 55 Vitest; `forge test` prints 41 because it runs the 4 invariants as one campaign), plus end-to-end runs and the live testnet proofs above.
+Every category has at least three independent checks, so a pass isn't a coincidence. **100 automated checks** (44 Foundry + 56 Vitest; `forge test` prints 41 because it runs the 4 invariants as one campaign), plus end-to-end runs and the live testnet proofs above.
 
 | Category | Sponsor | Checks | What they prove | File |
 |---|---|---|---|---|
@@ -92,7 +92,7 @@ Every category has at least three independent checks, so a pass isn't a coincide
 | Basket builder | Uniswap | 4 | greedy legs always cover the invoice with guaranteed minimum outputs; legs that share a pool are quoted against each other's price impact (replayed on a stateful AMM) | `packages/core/test/core.test.ts` |
 | Quoter batching | Uniswap | 3 | same-tick quotes → one Multicall3 call; separate ticks → separate batches; per-quote fallback when Multicall3 fails | `packages/core/test/core.test.ts` |
 | Trading API parser | Uniswap | 4 | executable v4 routes vs v3 / hooked / split (shown, not executed); multi-hop order; malformed quotes rejected | `packages/core/test/core.test.ts` |
-| Mirror node + CSV | Hedera, Whitechain | 3 | Hedera sales parsed from the mirror node; CSV export escapes and labels correctly | `packages/core/test/core.test.ts` |
+| Mirror node + CSV | Hedera, Whitechain | 4 | Hedera sales parsed from the mirror node, USDC and native-HBAR x402 payments (valued at the configured rate; fee transfers ignored); CSV export escapes and labels correctly | `packages/core/test/core.test.ts` |
 | HCS audit log | Hedera | 4 | topic messages decoded newest-first; right mirror URL; errors surfaced; empty topics | `packages/core/test/core.test.ts` |
 | Agent spending policy | Hedera | 9 | allowlist, per-merchant cap, total budget, human approval threshold, applied to the real 402 price; HBAR understood only at the rate the policy names; the audit topic survives every purchase (one log) | `agent/test/policy.test.ts` |
 | Tender API | all | 5 | ranking endpoint, input validation, invoice reads, chains without a deployment refused | `server/test/app.test.ts` |
@@ -104,6 +104,8 @@ Every category has at least three independent checks, so a pass isn't a coincide
 **End-to-end** (local forks of the real testnets): `e2e/fork.e2e.ts` (Unichain: invoice → ranking → swap payment → hook payment → basket → refund → CSV), `e2e/whitechain.e2e.ts` (USDT: approve+pay, permit pay, refund, CSV), `e2e/ui.e2e.ts` (headless browser: landing → shop → checkout → pay → shop confirms → Whitechain → merchant refund). The deploy runbooks (`scripts/deploy-*.sh`) are rehearsed on forks before every real run.
 
 **Live** (Unichain Sepolia, Nov 6): both proof payments checked on-chain after sending: merchant received exactly 0.10 USDC, invoices marked Paid, checkout and hook hold 0 tokens. See the table at the top.
+
+**Browser QA against the live testnets** (`scripts/live-local.sh` + `npx tsx e2e/live.visual.ts <dir>`): every page at desktop (1440 px) and phone (390 px) width checked for the values the chains hold, console errors, failed requests and sideways scrolling; then every visible button and link on every page clicked (178 checks, all passing on Nov 7). Read-only: no wallet is connected.
 
 Gas (from `forge test --gas-report`): `payWithToken` ~200k (1 hop) / ~250k (2 hops); basket ~130k per leg; hook swap ~180k; `createInvoice` ~147k.
 
