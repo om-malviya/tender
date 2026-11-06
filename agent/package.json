@@ -1,0 +1,7 @@
+{
+  "name": "@tender/agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": { "@x402/core": "^2.29.0", "@x402/hedera": "^2.29.0", "@x402/fetch": "^2.29.0", "@hiero-ledger/sdk": "^2.90.0", "zod": "^4.6.0" }
+}

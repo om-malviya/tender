@@ -1,0 +1,28 @@
+{
+  "name": "tender",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "server",
+    "demo-shop",
+    "agent",
+    "app"
+  ],
+  "scripts": {
+    "abis": "node scripts/export-abis.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "server": "tsx server/src/index.ts",
+    "shop": "tsx demo-shop/server/index.ts",
+    "agent": "tsx agent/src/run.ts",
+    "app": "npm run dev -w @tender/app"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.23.0",
+    "typescript": "^5.9.0",
+    "vitest": "^5.1.0",
+    "playwright": "^1.64.0"
+  }
+}

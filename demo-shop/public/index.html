@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chai &amp; Code</title>
+    <style>
+      /* A separate merchant's own website: deliberately its own look, not Tender's. */
+      :root { --bg: #14100c; --panel: #1e1813; --border: #3a2e24; --text: #f4ece4; --muted: #b7a796; --accent: #e8913a; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.55 ui-sans-serif, system-ui, sans-serif; }
+      header { display: flex; align-items: center; gap: 10px; padding: 18px 28px; border-bottom: 1px solid var(--border); }
+      header b { font-size: 18px; }
+      main { max-width: 980px; margin: 36px auto; padding: 0 20px; display: grid; grid-template-columns: 1.1fr 1fr; gap: 28px; }
+      .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 22px; }
+      .art { height: 220px; border-radius: 10px; background: radial-gradient(circle at 30% 30%, #f3b26b, #8a4b17); display: grid; place-items: center; font-size: 72px; }
+      h1 { margin: 16px 0 4px; font-size: 24px; }
+      .price { font-size: 28px; font-weight: 700; margin: 10px 0 18px; }
+      button { width: 100%; padding: 13px; margin-bottom: 10px; border-radius: 10px; border: 1px solid var(--border); background: #2a2119; color: var(--text); font: inherit; font-weight: 600; cursor: pointer; }
+      button.primary { background: var(--accent); border-color: var(--accent); color: #1a0f05; }
+      button:hover { filter: brightness(1.1); }
+      #status { margin-top: 8px; min-height: 24px; color: var(--muted); }
+      #status.ok { color: #6ee7a8; font-weight: 600; }
+      code { font: 12.5px ui-monospace, Menlo, monospace; color: var(--accent); }
+      pre { background: #0f0c09; border: 1px solid var(--border); border-radius: 10px; padding: 12px; overflow-x: auto; font: 12px ui-monospace, Menlo, monospace; color: var(--muted); }
+      .muted { color: var(--muted); }
+      @media (max-width: 760px) { main { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <header>☕ <b>Chai &amp; Code</b> <span class="muted">· a demo merchant using Tender</span></header>
+    <main>
+      <section class="card">
+        <div class="art">🫖</div>
+        <h1>Hackathon sticker pack</h1>
+        <div class="muted">Five stickers for your laptop. Ships from Mumbai.</div>
+        <div class="price">$__PRICE_USD__</div>
+        <button class="primary" onclick="buy('unichain-sepolia')">Pay with any token · Unichain</button>
+        <button onclick="buy('whitechain-sepolia')">Pay with USDT · Whitechain</button>
+        <div id="status"></div>
+      </section>
+      <section class="card">
+        <h2 style="margin-top: 0">For AI agents</h2>
+        <p class="muted">Agents don't fill in checkouts. Our chai price index is sold per request over <b>x402</b> on Hedera:</p>
+        <pre>GET /api/agent/dataset   → 402 Payment Required ($__AGENT_PRICE_USD__ USDC)
+GET /.well-known/tender.json   → what's for sale</pre>
+        <h2>How this shop integrates Tender</h2>
+        <p class="muted">The whole integration is the script below (view source): one tag for the widget, one call to our own server to create the invoice, one to confirm the payment on-chain.</p>
+      </section>
+    </main>
+
+    <!-- ===== The Tender integration: everything a merchant adds ===== -->
+    <script src="__TENDER_APP_URL__/tender.js"></script>
+    <script>
+      const show = (msg, ok) => Object.assign(document.getElementById("status"), { textContent: msg, className: ok ? "ok" : "" });
+      async function buy(chain) {
+        show("Creating your order…");
+        const order = await fetch("/api/create-invoice", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ chain }),
+        }).then((r) => r.json());
+        if (order.error) return show(order.error);
+        show(`Order #${order.invoiceId}: complete the payment in the Tender window…`);
+        Tender.checkout({
+          chain,
+          invoiceId: order.invoiceId,
+          onPaid: async () => {
+            const check = await fetch(`/api/orders/${chain}/${order.invoiceId}`).then((r) => r.json()); // verified on-chain by our server
+            show(check.paid ? `Order #${order.invoiceId} confirmed ✓ paid on-chain` : "Payment not confirmed yet…", check.paid);
+          },
+          onClose: () => show(`Checkout closed. Order #${order.invoiceId} is still payable for 30 minutes.`),
+        });
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,6 @@
+{
+  "budgetTotal": 0.2,
+  "perMerchantCap": 0.1,
+  "allowlist": ["localhost:8788"],
+  "humanApprovalAbove": 0.1
+}

@@ -1,0 +1,39 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+# Uniswap v4's PoolManager (deployed inside our tests) requires exactly 0.8.26.
+solc = "0.8.26"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 200
+bytecode_hash = "none"
+# PoolManager is larger than the 24 KB mainnet limit when compiled without via-IR.
+# This only affects local tests: we never deploy PoolManager ourselves.
+code_size_limit = 500000
+remappings = [
+  "forge-std/=lib/forge-std/src/",
+  "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+  "@openzeppelin/=lib/openzeppelin-contracts/",
+  "v4-core/=lib/v4-core/",
+  "solmate/=lib/solmate/",
+]
+
+[profile.default.fuzz]
+runs = 1000
+
+[profile.default.invariant]
+runs = 256
+depth = 64
+fail_on_revert = false
+
+# Whitechain Sepolia: the Whitechain docs require solc 0.8.30 + prague or explorer verification fails.
+# Only CheckoutCore is deployed there. Build with: FOUNDRY_PROFILE=whitechain forge build --skip test
+[profile.whitechain]
+solc = "0.8.30"
+evm_version = "prague"
+code_size_limit = 24576
+
+[rpc_endpoints]
+unichain_sepolia = "${UNICHAIN_SEPOLIA_RPC}"
+whitechain_sepolia = "https://rpc.testnet.whitechain.io/"
