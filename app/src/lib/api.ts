@@ -83,6 +83,7 @@ export interface RankView {
   invoice: { id: string; amount: string; settleToken: Token; merchant: Address; expiry: string };
   routes: RouteView[];
   recommended?: RouteView;
+  usdPerToken: Record<string, number>;
   ethUsd: number;
 }
 export interface BasketView {

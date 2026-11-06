@@ -47,7 +47,7 @@ export function DashboardPage() {
         subtitle={
           merchant ? (
             <>
-              Showing the most recent Tender activity for {address ? "your wallet" : "the demo merchant"} <Addr value={merchant} />
+              Recent activity for {address ? "your wallet" : "the demo merchant"} <Addr value={merchant} />
             </>
           ) : (
             "Connect a merchant wallet to see its activity."
@@ -77,7 +77,7 @@ export function DashboardPage() {
       <Panel
         title="Recent payments"
         subtitle="Every row is rebuilt from the checkout contract's on-chain events"
-        foot={<Link to="/merchant">View all invoices →</Link>}
+        foot={<Link to="/merchant">All invoices →</Link>}
       >
         <div className="table-wrap">
           <table>
@@ -135,7 +135,7 @@ export function DashboardPage() {
           </table>
           {invoicesQ.isLoading && <Empty>Loading on-chain history…</Empty>}
           {invoicesQ.error && <Empty>Couldn't load invoices: {String(invoicesQ.error.message)}</Empty>}
-          {!invoicesQ.isLoading && !invoicesQ.error && invoices.length === 0 && <Empty>No invoices yet. Create one, or buy something in the demo shop.</Empty>}
+          {!invoicesQ.isLoading && !invoicesQ.error && invoices.length === 0 && <Empty>No invoices yet. Create one on the Merchant page, or buy something in the demo shop.</Empty>}
         </div>
       </Panel>
 

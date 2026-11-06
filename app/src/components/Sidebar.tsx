@@ -1,15 +1,17 @@
 import { NavLink } from "react-router-dom";
 import { useAppConfig } from "../lib/appConfig.ts";
+import { Icon } from "./ui.tsx";
 import { WalletPanel } from "./WalletPanel.tsx";
 
 const NAV = [
-  { to: "/", icon: "◧", label: "Dashboard", end: true },
-  { to: "/pay", icon: "⇄", label: "Pay an invoice" },
-  { to: "/merchant", icon: "▤", label: "Merchant" },
-  { to: "/agents", icon: "◎", label: "Agent sales" },
+  { to: "/", icon: Icon.home, label: "Overview", end: true },
+  { to: "/dashboard", icon: Icon.dashboard, label: "Dashboard" },
+  { to: "/pay", icon: Icon.pay, label: "Pay" },
+  { to: "/merchant", icon: Icon.merchant, label: "Merchant" },
+  { to: "/agents", icon: Icon.agents, label: "Agents" },
 ];
 
-/** Pinned to the far left: brand, navigation buttons, demo links, and the wallet at the bottom. */
+/** Pinned far left: brand, navigation, demo link, the account at the bottom. */
 export function Sidebar() {
   const cfg = useAppConfig();
   return (
@@ -21,7 +23,6 @@ export function Sidebar() {
       </div>
 
       <nav className="nav-section">
-        <div className="nav-label">Explore</div>
         {NAV.map((n) => (
           <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => `nav-btn${isActive ? " active" : ""}`}>
             <span className="nav-icon">{n.icon}</span>
@@ -30,25 +31,18 @@ export function Sidebar() {
         ))}
       </nav>
 
-      <nav className="nav-section">
-        <div className="nav-label">Demo</div>
-        {cfg.shopUrl && (
+      {cfg.shopUrl && (
+        <nav className="nav-section">
+          <div className="nav-label">Demo</div>
           <a className="nav-btn" href={cfg.shopUrl} target="_blank" rel="noreferrer">
-            <span className="nav-icon">☕</span>
-            Chai &amp; Code shop
+            <span className="nav-icon">{Icon.shop}</span>
+            Chai &amp; Code
             <span className="nav-ext">↗</span>
           </a>
-        )}
-      </nav>
+        </nav>
+      )}
 
       <div className="sidebar-bottom">
-        <div className="rails">
-          <b>Uniswap v4</b> any-token checkout
-          <br />
-          <b>Whitechain</b> USDT invoices
-          <br />
-          <b>Hedera</b> x402 agent sales
-        </div>
         <WalletPanel />
       </div>
     </aside>

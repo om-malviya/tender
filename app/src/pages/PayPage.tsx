@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { erc20Abi, parseEventLogs, type Hex } from "viem";
+import { erc20Abi, parseEventLogs, type Address, type Hex } from "viem";
 import { useConnection } from "wagmi";
 import { checkoutCoreAbi, hookSwapArgs, poolSwapTestAbi, uniswapCheckoutAbi } from "@tender/core";
 import { api, type BasketView, type ChainKey, type RouteView } from "../lib/api.ts";
 import { useAppConfig } from "../lib/appConfig.ts";
 import { amount, short, tokenOf, usd } from "../lib/format.ts";
 import { errorText, useTx } from "../lib/tx.ts";
-import { Addr, ChainPill, Empty, PageHeader, Panel, RouteChips, SourcePill, Spinner, StatusPill } from "../components/ui.tsx";
+import { Addr, ChainPill, Empty, PageHeader, Panel, RouteChips, Sheet, SourcePill, Spinner, StatusPill, Stepper, TokenLogo } from "../components/ui.tsx";
 
 /** /pay: open an invoice by chain + id. */
 export function PayLookupPage() {
@@ -18,7 +18,7 @@ export function PayLookupPage() {
   const [id, setId] = useState("");
   return (
     <>
-      <PageHeader crumb={["Pay"]} title="Pay an invoice" subtitle="Paste an invoice number from a merchant. Shops open this page for you through the Tender widget." />
+      <PageHeader crumb={["Pay"]} title="Pay an invoice" subtitle="Enter an invoice number from a merchant. Shops open this for you through the Tender widget." />
       <Panel title="Open an invoice">
         <form
           className="panel-body row"
@@ -32,17 +32,18 @@ export function PayLookupPage() {
             <select value={chain} onChange={(e) => setChain(e.target.value as ChainKey)}>
               {cfg.chains.map((c) => (
                 <option key={c.key} value={c.key} disabled={!c.checkout}>
-                  {c.name} {c.checkout ? "" : "(not deployed)"}
+                  {c.name}
+                  {c.checkout ? "" : " (not deployed)"}
                 </option>
               ))}
             </select>
           </div>
           <div className="field">
             <label>Invoice #</label>
-            <input value={id} onChange={(e) => setId(e.target.value.replace(/\D/g, ""))} placeholder="e.g. 1" />
+            <input value={id} onChange={(e) => setId(e.target.value.replace(/\D/g, ""))} placeholder="1" autoFocus />
           </div>
           <button className="btn primary" type="submit" disabled={!id}>
-            Open invoice
+            Open
           </button>
         </form>
       </Panel>
@@ -50,9 +51,12 @@ export function PayLookupPage() {
   );
 }
 
-type Receipt = { txHash: Hex; spent: { symbol: string; amount: string; decimals: number }[]; returned?: string; settled: string; route: string };
+type Receipt = { txHash: Hex; spent: { symbol: string; amount: string; decimals: number }[]; returned?: { amount: string; symbol: string; decimals: number }; settled: string; route: string };
+type Phase = "idle" | "review" | "approving" | "paying" | "done";
 
-/** /pay/:chain/:id: the customer view. Invoice, ranked routes, pay, receipt. */
+const STEPS = ["Route", "Review", "Pay", "Done"];
+
+/** /pay/:chain/:id: the checkout. Route → review sheet → approve/pay → receipt. */
 export function PayPage() {
   const { chain, id } = useParams() as { chain: ChainKey; id: string };
   const [params] = useSearchParams();
@@ -70,12 +74,18 @@ export function PayPage() {
   const secondsLeft = inv ? Number(inv.expiry) - now : 0;
   const payable = inv?.status === "Open" && secondsLeft > 0;
 
-  // Quotes go stale fast (prices move), so re-rank every 20 s while the page is open.
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const [basket, setBasket] = useState<BasketView | null>(null);
+
+  // Quotes go stale fast, so re-rank every 20 s while choosing a route (not while a payment is in flight).
   const rankQ = useQuery({
     queryKey: ["rank", chain, id, address],
     queryFn: () => api.rank(chain, id, address!),
     enabled: Boolean(address && payable),
-    refetchInterval: 20_000,
+    refetchInterval: phase === "idle" ? 20_000 : false,
   });
   const routes = rankQ.data?.routes ?? [];
   const recommendedIndex = routes.findIndex((r) => r.affordable && r.executable && !Number.isNaN(r.totalCostUsd));
@@ -83,113 +93,109 @@ export function PayPage() {
   const selectedIndex = picked !== null && routes[picked] ? picked : recommendedIndex;
   const selected = selectedIndex >= 0 ? routes[selectedIndex] : undefined;
 
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [receipt, setReceipt] = useState<Receipt | null>(null);
-  const [basket, setBasket] = useState<BasketView | null>(null);
-
-  const deadline = () => BigInt(Math.floor(Date.now() / 1000) + 10 * 60); // 10 min: a stale quote can't be mined later
+  const deadline = () => BigInt(Math.floor(Date.now() / 1000) + 10 * 60); // a stale quote can't be mined later
 
   function announce(txHash: Hex) {
-    // The shop's widget listens for this; it should still confirm the payment on-chain.
+    // The shop's widget listens for this; it still confirms the payment on-chain.
     if (embed && window.opener) window.opener.postMessage({ type: "tender:paid", chain, invoiceId: id, txHash }, "*");
     queryClient.invalidateQueries({ queryKey: ["invoice", chain, id] });
   }
 
-  async function pay(route: RouteView) {
-    if (!chainCfg?.checkout || !inv || !settle) return;
+  async function run(fn: () => Promise<void>) {
     setError(null);
     try {
-      const checkout = chainCfg.checkout;
-      const invoiceId = BigInt(id);
-      if (route.source === "v4-hook" && route.hook) {
-        // The invoice is paid by a plain Uniswap router swapping through the hooked pool. Tender's contract
-        // is never called: the hook inside the pool settles it. Change comes back in the settle token.
+      await fn();
+      setPhase("done");
+    } catch (e) {
+      setError(errorText(e));
+      setPhase("idle");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function pay(route: RouteView) {
+    if (!chainCfg?.checkout || !inv || !settle || !tx.address) return;
+    const checkout = chainCfg.checkout;
+    const invoiceId = BigInt(id);
+    const me = tx.address;
+    const hops = (hs: RouteView["hops"]) => hs.map((h) => ({ tokenIn: h.tokenIn, fee: h.fee, tickSpacing: h.tickSpacing }));
+    const balanceOf = (token: Address) => tx.client(chainCfg.id).readContract({ address: token, abi: erc20Abi, functionName: "balanceOf", args: [me] });
+
+    return run(async () => {
+      if (route.source === "direct") {
+        setPhase("approving");
+        setBusy(`Approve ${amount(inv.amount, settle.decimals)} ${settle.symbol}`);
+        await tx.approveIfNeeded(chainCfg.id, settle.address, checkout, BigInt(inv.amount));
+        setPhase("paying");
+        setBusy("Confirm the payment in your wallet");
+        const r = await tx.send({ chainId: chainCfg.id, address: checkout, abi: checkoutCoreAbi, functionName: "payInvoice", args: [invoiceId] });
+        setReceipt({ txHash: r.transactionHash, spent: [{ symbol: settle.symbol, amount: inv.amount, decimals: settle.decimals }], settled: inv.amount, route: route.label });
+        announce(r.transactionHash);
+      } else if (route.source === "v4-hook" && route.hook) {
+        // Paid by a plain Uniswap router swapping through the hooked pool. Tender's contract is never called.
         const amountIn = BigInt(route.maxAmountIn);
-        setBusy(`Approving ${amount(amountIn, route.token.decimals)} ${route.token.symbol} for the router…`);
+        setPhase("approving");
+        setBusy(`Approve ${amount(amountIn, route.token.decimals)} ${route.token.symbol} for the router`);
         await tx.approveIfNeeded(chainCfg.id, route.token.address, route.hook.router, amountIn);
-        setBusy("Swapping through the hooked pool…");
-        const settleBefore = await tx.client(chainCfg.id).readContract({ address: settle.address, abi: erc20Abi, functionName: "balanceOf", args: [tx.address!] });
-        const r = await tx.send({
-          chainId: chainCfg.id,
-          address: route.hook.router,
-          abi: poolSwapTestAbi,
-          functionName: "swap",
-          args: hookSwapArgs(route.hook, amountIn, invoiceId, tx.address!),
-        });
-        const settleAfter = await tx.client(chainCfg.id).readContract({ address: settle.address, abi: erc20Abi, functionName: "balanceOf", args: [tx.address!] });
+        setPhase("paying");
+        setBusy("Confirm the swap in your wallet");
+        const before = await balanceOf(settle.address);
+        const r = await tx.send({ chainId: chainCfg.id, address: route.hook.router, abi: poolSwapTestAbi, functionName: "swap", args: hookSwapArgs(route.hook, amountIn, invoiceId, me) });
+        const after = await balanceOf(settle.address);
         setReceipt({
           txHash: r.transactionHash,
           spent: [{ symbol: route.token.symbol, amount: amountIn.toString(), decimals: route.token.decimals }],
-          returned: (settleAfter - settleBefore).toString(),
+          returned: { amount: (after - before).toString(), symbol: settle.symbol, decimals: settle.decimals },
           settled: inv.amount,
           route: route.label,
         });
         announce(r.transactionHash);
       } else if (route.source === "split" && route.split) {
-        // Two paths in one transaction, through payWithBasket (each leg is exact-input with a minimum output).
-        const legs = route.split.map((l) => ({
-          tokenIn: route.token.address,
-          amountIn: BigInt(l.amountIn),
-          path: l.hops.map((h) => ({ tokenIn: h.tokenIn, fee: h.fee, tickSpacing: h.tickSpacing })),
-          minOut: BigInt(l.minOut),
-        }));
+        const legs = route.split.map((l) => ({ tokenIn: route.token.address, amountIn: BigInt(l.amountIn), path: hops(l.hops), minOut: BigInt(l.minOut) }));
         const total = legs.reduce((s, l) => s + l.amountIn, 0n);
-        setBusy(`Approving ${amount(total, route.token.decimals)} ${route.token.symbol}…`);
+        setPhase("approving");
+        setBusy(`Approve ${amount(total, route.token.decimals)} ${route.token.symbol}`);
         await tx.approveIfNeeded(chainCfg.id, route.token.address, checkout, total);
-        setBusy("Swapping on both paths and paying…");
+        setPhase("paying");
+        setBusy("Confirm the payment in your wallet");
         const r = await tx.send({ chainId: chainCfg.id, address: checkout, abi: uniswapCheckoutAbi, functionName: "payWithBasket", args: [invoiceId, legs, deadline()] });
         const [ev] = parseEventLogs({ abi: uniswapCheckoutAbi, eventName: "BasketPaid", logs: r.logs });
         const out = ev?.args.totalOut ?? BigInt(inv.amount);
         setReceipt({
           txHash: r.transactionHash,
           spent: [{ symbol: route.token.symbol, amount: total.toString(), decimals: route.token.decimals }],
-          returned: (out - BigInt(inv.amount)).toString(),
+          returned: { amount: (out - BigInt(inv.amount)).toString(), symbol: settle.symbol, decimals: settle.decimals },
           settled: inv.amount,
           route: route.label,
         });
         announce(r.transactionHash);
-      } else if (route.source === "direct") {
-        setBusy(`Approving ${settle.symbol}…`);
-        await tx.approveIfNeeded(chainCfg.id, settle.address, checkout, BigInt(inv.amount));
-        setBusy("Paying…");
-        const r = await tx.send({ chainId: chainCfg.id, address: checkout, abi: checkoutCoreAbi, functionName: "payInvoice", args: [invoiceId] });
-        setReceipt({ txHash: r.transactionHash, spent: [{ symbol: settle.symbol, amount: inv.amount, decimals: settle.decimals }], settled: inv.amount, route: `${settle.symbol} (no swap)` });
-        announce(r.transactionHash);
       } else {
         const maxIn = BigInt(route.maxAmountIn);
-        setBusy(`Approving at most ${amount(maxIn, route.token.decimals)} ${route.token.symbol}…`);
+        setPhase("approving");
+        setBusy(`Approve up to ${amount(maxIn, route.token.decimals)} ${route.token.symbol}`);
         await tx.approveIfNeeded(chainCfg.id, route.token.address, checkout, maxIn);
-        setBusy("Swapping on Uniswap v4 and paying…");
-        const r = await tx.send({
-          chainId: chainCfg.id,
-          address: checkout,
-          abi: uniswapCheckoutAbi,
-          functionName: "payWithToken",
-          args: [invoiceId, route.token.address, maxIn, route.hops.map((h) => ({ tokenIn: h.tokenIn, fee: h.fee, tickSpacing: h.tickSpacing })), deadline()],
-        });
+        setPhase("paying");
+        setBusy("Confirm the payment in your wallet");
+        const r = await tx.send({ chainId: chainCfg.id, address: checkout, abi: uniswapCheckoutAbi, functionName: "payWithToken", args: [invoiceId, route.token.address, maxIn, hops(route.hops), deadline()] });
         const [ev] = parseEventLogs({ abi: uniswapCheckoutAbi, eventName: "InvoicePaid", logs: r.logs });
         const spent = ev?.args.amountIn ?? maxIn;
         setReceipt({
           txHash: r.transactionHash,
           spent: [{ symbol: route.token.symbol, amount: spent.toString(), decimals: route.token.decimals }],
-          returned: (maxIn - spent).toString(),
+          returned: { amount: (maxIn - spent).toString(), symbol: route.token.symbol, decimals: route.token.decimals },
           settled: (ev?.args.amountSettled ?? BigInt(inv.amount)).toString(),
           route: route.label,
         });
         announce(r.transactionHash);
       }
-    } catch (e) {
-      setError(errorText(e));
-    } finally {
-      setBusy(null);
-    }
+    });
   }
 
   async function buildBasket() {
     if (!address) return;
     setError(null);
-    setBusy("Building a basket from your balances…");
+    setBusy("Building a basket from your balances");
     try {
       setBasket(await api.basket(chain, id, address));
     } catch (e) {
@@ -199,22 +205,24 @@ export function PayPage() {
     }
   }
 
-  async function payBasket() {
-    if (!basket || !chainCfg?.checkout || !inv) return;
-    setError(null);
-    try {
+  function payBasket() {
+    if (!basket || !chainCfg?.checkout || !inv || !settle) return;
+    const checkout = chainCfg.checkout;
+    return run(async () => {
+      setPhase("approving");
       for (const leg of basket.legs) {
         const t = tokenOf(chainCfg, leg.tokenIn);
-        setBusy(`Approving ${amount(leg.amountIn, t?.decimals ?? 18)} ${t?.symbol ?? short(leg.tokenIn)}…`);
-        await tx.approveIfNeeded(chainCfg.id, leg.tokenIn, chainCfg.checkout, BigInt(leg.amountIn));
+        setBusy(`Approve ${amount(leg.amountIn, t?.decimals ?? 18)} ${t?.symbol ?? short(leg.tokenIn)}`);
+        await tx.approveIfNeeded(chainCfg.id, leg.tokenIn, checkout, BigInt(leg.amountIn));
       }
-      setBusy("Swapping every leg and paying…");
+      setPhase("paying");
+      setBusy("Confirm the payment in your wallet");
       const r = await tx.send({
         chainId: chainCfg.id,
-        address: chainCfg.checkout,
+        address: checkout,
         abi: uniswapCheckoutAbi,
         functionName: "payWithBasket",
-        args: [BigInt(id), basket.legs.map((l) => ({ tokenIn: l.tokenIn, amountIn: BigInt(l.amountIn), path: l.path.map((h) => ({ ...h })), minOut: BigInt(l.minOut) })), deadline()],
+        args: [BigInt(id), basket.legs.map((l) => ({ tokenIn: l.tokenIn, amountIn: BigInt(l.amountIn), path: l.path.map((h) => ({ tokenIn: h.tokenIn, fee: h.fee, tickSpacing: h.tickSpacing })), minOut: BigInt(l.minOut) })), deadline()],
       });
       const [ev] = parseEventLogs({ abi: uniswapCheckoutAbi, eventName: "BasketPaid", logs: r.logs });
       const total = ev?.args.totalOut ?? BigInt(inv.amount);
@@ -224,31 +232,30 @@ export function PayPage() {
           const t = tokenOf(chainCfg, l.tokenIn);
           return { symbol: t?.symbol ?? short(l.tokenIn), amount: l.amountIn, decimals: t?.decimals ?? 18 };
         }),
-        returned: (total - BigInt(inv.amount)).toString(),
+        returned: { amount: (total - BigInt(inv.amount)).toString(), symbol: settle.symbol, decimals: settle.decimals },
         settled: inv.amount,
-        route: `basket of ${basket.legs.length} tokens`,
+        route: `Basket of ${basket.legs.length} tokens`,
       });
       announce(r.transactionHash);
-    } catch (e) {
-      setError(errorText(e));
-    } finally {
-      setBusy(null);
-    }
+    });
   }
 
   if (!chainCfg) return <Empty>Unknown network “{chain}”.</Empty>;
 
+  const stepIndex = phase === "idle" ? 0 : phase === "review" ? 1 : phase === "done" ? 3 : 2;
+  const seen = new Set<string>();
+  const balances = routes.filter((r) => (seen.has(r.token.address) ? false : (seen.add(r.token.address), true))).map((r) => ({ token: r.token, balance: r.balance }));
+  const priceOf = (addr: string) => rankQ.data?.usdPerToken?.[addr.toLowerCase()];
+  const inFlight = phase !== "idle" && phase !== "done";
+
   return (
     <>
-      {!embed && (
-        <PageHeader
-          crumb={["Pay", `Invoice #${id}`]}
-          title={`Invoice #${id}`}
-          subtitle={<>Pay with any token you hold. The merchant always receives the exact amount.</>}
-          actions={<Link className="btn" to="/pay">Open another</Link>}
-        />
+      {!embed ? (
+        <PageHeader crumb={["Pay", `Invoice #${id}`]} title={`Invoice #${id}`} subtitle="Pay with any token you hold. The merchant receives the exact amount." actions={<Link className="btn" to="/pay">Open another</Link>} />
+      ) : (
+        <h1 style={{ fontSize: 16, marginBottom: 12 }}>Checkout · Invoice #{id}</h1>
       )}
-      {embed && <h1 style={{ fontSize: 20, marginBottom: 14 }}>Tender checkout · Invoice #{id}</h1>}
+      <Stepper steps={STEPS} current={stepIndex} />
 
       <Panel title="Invoice" actions={inv && <StatusPill status={inv.status === "Open" && secondsLeft <= 0 ? "Expired" : inv.status} refunded={inv.refunded !== "0"} />}>
         <div className="panel-body">
@@ -286,22 +293,26 @@ export function PayPage() {
       {receipt && settle && (
         <Panel title="Payment confirmed" actions={<span className="pill green">Settled</span>}>
           <div className="panel-body">
-            <div className="receipt-line">
-              <span className="muted">Merchant received</span>
-              <b>
-                exactly {amount(receipt.settled, settle.decimals)} {settle.symbol}
-              </b>
+            <div className="status-line" style={{ marginBottom: 10 }}>
+              <span className="ok-check">✓</span>
+              <div>
+                <div>
+                  Merchant received <b>exactly {amount(receipt.settled, settle.decimals)} {settle.symbol}</b>
+                </div>
+                <div className="muted" style={{ fontSize: 12 }}>
+                  <Addr value={receipt.txHash} chain={chainCfg} kind="tx" />
+                </div>
+              </div>
             </div>
             <div className="receipt-line">
               <span className="muted">You paid</span>
               <span>{receipt.spent.map((s) => `${amount(s.amount, s.decimals, 6)} ${s.symbol}`).join(" + ")}</span>
             </div>
-            {receipt.returned && receipt.returned !== "0" && (
+            {receipt.returned && receipt.returned.amount !== "0" && (
               <div className="receipt-line">
                 <span className="muted">Returned to you in the same transaction</span>
                 <span>
-                  {amount(receipt.returned, receipt.spent.length > 1 ? settle.decimals : receipt.spent[0]!.decimals, 6)}{" "}
-                  {receipt.spent.length > 1 ? settle.symbol : receipt.spent[0]!.symbol}
+                  {amount(receipt.returned.amount, receipt.returned.decimals, 6)} {receipt.returned.symbol}
                 </span>
               </div>
             )}
@@ -309,36 +320,48 @@ export function PayPage() {
               <span className="muted">Route</span>
               <RouteChips label={receipt.route} />
             </div>
-            <div className="receipt-line">
-              <span className="muted">Transaction</span>
-              <Addr value={receipt.txHash} chain={chainCfg} kind="tx" />
-            </div>
           </div>
         </Panel>
       )}
 
       {!receipt && inv && !payable && inv.status === "Paid" && <div className="callout green">This invoice has been paid.</div>}
 
+      {!receipt && payable && isConnected && balances.length > 0 && (
+        <Panel title="Your balances" subtitle={`On ${chainCfg.name}`}>
+          <div className="tokens">
+            {balances.map((b) => (
+              <div className="token-row" key={b.token.address}>
+                <TokenLogo symbol={b.token.symbol} />
+                <span className="sym">{b.token.symbol}</span>
+                <span className="bal">
+                  <div>{amount(b.balance, b.token.decimals, 6)}</div>
+                  <div className="usd">{usd((Number(b.balance) / 10 ** b.token.decimals) * (priceOf(b.token.address) ?? NaN))}</div>
+                </span>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      )}
+
       {!receipt && payable && (
         <Panel
-          title="Ranked routes"
-          subtitle={chainCfg.swaps ? "Every way you could pay, cheapest first: value of what you give up + gas. Quotes from the Uniswap v4 Quoter, refreshed every 20 s." : `${settle?.symbol} on ${chainCfg.name}: paid directly, no swap needed.`}
+          title="Choose how to pay"
+          subtitle={chainCfg.swaps ? "Cheapest first. Total = value of what you give up + gas. Quotes from the Uniswap v4 Quoter, refreshed every 20 s." : `${settle?.symbol} on ${chainCfg.name}, paid directly.`}
           actions={rankQ.isFetching ? <Spinner /> : null}
         >
-          {!isConnected && <Empty>Connect a wallet (bottom left) to see what you can pay with.</Empty>}
+          {!isConnected && <Empty>Connect a wallet to see what you can pay with.</Empty>}
           {isConnected && rankQ.error && <Empty>{String(rankQ.error.message)}</Empty>}
           {isConnected && routes.length > 0 && (
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>#</th>
                     <th>Route</th>
                     <th>Source</th>
                     <th className="num">You pay</th>
                     <th className="num">Fees + impact</th>
                     <th className="num">Gas</th>
-                    <th className="num">Total cost</th>
+                    <th className="num">Total</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -346,12 +369,7 @@ export function PayPage() {
                   {routes.map((r, i) => {
                     const usable = r.affordable && r.executable;
                     return (
-                      <tr
-                        key={`${r.source}-${r.label}`}
-                        className={`${usable ? "selectable" : "dim"}${i === selectedIndex ? " selected" : ""}`}
-                        onClick={() => usable && setPicked(i)}
-                      >
-                        <td className="mono faint">{i + 1}</td>
+                      <tr key={`${r.source}-${r.label}`} className={`${usable ? "selectable" : "dim"}${i === selectedIndex ? " selected" : ""}`} onClick={() => usable && setPicked(i)}>
                         <td>
                           <RouteChips label={r.label} />
                         </td>
@@ -370,10 +388,12 @@ export function PayPage() {
                           {i === recommendedIndex ? (
                             <span className="pill green">Best</span>
                           ) : !r.executable ? (
-                            <span className="pill" title={r.note}>Compare only</span>
+                            <span className="pill plain" title={r.note}>
+                              Compare only
+                            </span>
                           ) : !r.affordable ? (
                             <span className="pill amber" title={`You hold ${amount(r.balance, r.token.decimals)} ${r.token.symbol}`}>
-                              Can't afford
+                              Not enough
                             </span>
                           ) : null}
                         </td>
@@ -389,27 +409,21 @@ export function PayPage() {
               {selected && inv && settle ? (
                 <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
                   <div className="muted">
-                    You approve at most{" "}
-                    <b style={{ color: "var(--text)" }}>
-                      {amount(selected.maxAmountIn, selected.token.decimals, 6)} {selected.token.symbol}
-                    </b>{" "}
-                    (quote + {(selected.slippageBps / 100).toFixed(2)}%{selected.impactBps > 0 ? `, sized from this route's ${(selected.impactBps / 100).toFixed(2)}% price impact` : ""}). Whatever the swap doesn't use comes straight back.
-                    {selected.source === "v4-hook" && " Paid through a generic Uniswap router: the pool's hook settles the invoice."}
+                    Selected: <span className="text-2">{selected.label}</span>
                   </div>
-                  <button className="btn primary" disabled={Boolean(busy)} onClick={() => pay(selected)}>
-                    {busy ??
-                      (selected.source === "direct"
-                        ? `Pay ${amount(inv.amount, settle.decimals)} ${settle.symbol}`
-                        : `Pay ${amount(inv.amount, settle.decimals)} ${settle.symbol} with ${selected.token.symbol}${selected.source === "v4-hook" ? " via any router" : selected.source === "split" ? " (split)" : ""}`)}
+                  <button className="btn primary" disabled={inFlight} onClick={() => setPhase("review")}>
+                    {selected.source === "direct"
+                      ? `Pay ${amount(inv.amount, settle.decimals)} ${settle.symbol}`
+                      : `Pay ${amount(inv.amount, settle.decimals)} ${settle.symbol} with ${selected.token.symbol}${selected.source === "v4-hook" ? " via any router" : selected.source === "split" ? " (split)" : ""}`}
                   </button>
                 </div>
               ) : rankQ.isLoading ? (
                 <span className="muted">Scanning your balances and quoting routes…</span>
               ) : chainCfg.swaps ? (
                 <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-                  <div className="muted">No single token in your wallet covers this invoice. Combine several in one transaction:</div>
+                  <div className="muted">No single token covers this invoice. Combine several in one transaction.</div>
                   <button className="btn primary" disabled={Boolean(busy)} onClick={buildBasket}>
-                    {busy ?? "Pay with a basket of tokens"}
+                    {busy ?? "Pay with a basket"}
                   </button>
                 </div>
               ) : (
@@ -420,8 +434,8 @@ export function PayPage() {
         </Panel>
       )}
 
-      {!receipt && basket && settle && (
-        <Panel title="Basket payment" subtitle="Each leg is swapped with exact input; together they guarantee at least the invoice amount. Any excess comes back to you.">
+      {!receipt && basket && settle && inv && (
+        <Panel title="Basket" subtitle="Each leg is swapped with exact input; together they guarantee at least the invoice amount. Any excess comes back to you.">
           <div className="table-wrap">
             <table>
               <thead>
@@ -450,21 +464,100 @@ export function PayPage() {
             </table>
           </div>
           <div className="panel-foot row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-            <span className={basket.covers ? "muted" : ""}>
-              {basket.covers ? `Guaranteed ${amount(basket.guaranteedOut, settle.decimals)} ${settle.symbol} ≥ ${amount(inv!.amount, settle.decimals)} due` : "Your whole wallet isn't enough for this invoice."}
-            </span>
-            <button className="btn primary" disabled={!basket.covers || Boolean(busy)} onClick={payBasket}>
-              {busy ?? "Pay with basket"}
+            <span className="muted">{basket.covers ? `Guaranteed ${amount(basket.guaranteedOut, settle.decimals)} ${settle.symbol} ≥ ${amount(inv.amount, settle.decimals)} due` : "Your whole wallet isn't enough for this invoice."}</span>
+            <button className="btn primary" disabled={!basket.covers || inFlight} onClick={payBasket}>
+              Pay with basket
             </button>
           </div>
         </Panel>
       )}
 
-      {error && <div className="callout red" style={{ marginBottom: 18 }}>{error}</div>}
-      {busy && !error && (
-        <div className="callout" style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <Spinner /> {busy} Confirm in your wallet.
+      {error && <div className="callout red" style={{ marginBottom: 14 }}>{error}</div>}
+
+      {/* Basket payments show progress inline; single-route payments go through the review sheet. */}
+      {inFlight && !selected && (
+        <div className="callout status-line">
+          <Spinner /> {busy}
         </div>
+      )}
+
+      {/* Review sheet: what you pay, what the merchant gets, what comes back. Then approve + pay with status. */}
+      {inFlight && selected && inv && settle && (
+        <Sheet
+          title={phase === "review" ? "Review payment" : phase === "approving" ? "Step 1 of 2 · Approve" : "Step 2 of 2 · Pay"}
+          onClose={phase === "review" ? () => setPhase("idle") : undefined}
+          foot={
+            phase === "review" ? (
+              <>
+                <button className="btn" onClick={() => setPhase("idle")}>
+                  Back
+                </button>
+                <button className="btn primary" onClick={() => pay(selected)}>
+                  Confirm and pay
+                </button>
+              </>
+            ) : (
+              <span className="status-line">
+                <Spinner /> {busy}
+              </span>
+            )
+          }
+        >
+          <div className="flow">
+            <div>
+              <div className="lbl">You pay up to</div>
+              <div className="amt">
+                {amount(selected.maxAmountIn, selected.token.decimals, 6)} {selected.token.symbol}
+              </div>
+            </div>
+            <div className="arrow">→</div>
+            <div style={{ textAlign: "right" }}>
+              <div className="lbl">Merchant receives</div>
+              <div className="amt">
+                {amount(inv.amount, settle.decimals)} {settle.symbol}
+              </div>
+            </div>
+          </div>
+          <div>
+            <div className="detail">
+              <span className="k">Route</span>
+              <RouteChips label={selected.label} />
+            </div>
+            <div className="detail">
+              <span className="k">Quoted now</span>
+              <span>
+                {amount(selected.amountIn, selected.token.decimals, 6)} {selected.token.symbol}
+              </span>
+            </div>
+            {selected.hops.length > 0 && (
+              <div className="detail">
+                <span className="k">Price buffer</span>
+                <span>
+                  {(selected.slippageBps / 100).toFixed(2)}%{selected.impactBps > 0 ? ` · from ${(selected.impactBps / 100).toFixed(2)}% measured impact` : ""}
+                </span>
+              </div>
+            )}
+            <div className="detail">
+              <span className="k">Fees + impact</span>
+              <span>{usd(selected.overpayUsd)}</span>
+            </div>
+            <div className="detail">
+              <span className="k">Network fee (est.)</span>
+              <span>{usd(selected.gasUsd)}</span>
+            </div>
+            <div className="detail">
+              <span className="k">Unused amount</span>
+              <span>Returned in the same transaction</span>
+            </div>
+            <div className="detail">
+              <span className="k">Settled by</span>
+              <span>{selected.source === "v4-hook" ? "The pool's hook, via a generic Uniswap router" : selected.source === "direct" ? "CheckoutCore" : "UniswapCheckout"}</span>
+            </div>
+          </div>
+          {phase !== "review" && (
+            <div className="callout">{phase === "approving" ? "Approving the exact amount, never unlimited." : "Swapping and paying in one transaction. If anything is off, it reverts and nothing moves."}</div>
+          )}
+        </Sheet>
       )}
     </>
   );

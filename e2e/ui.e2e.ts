@@ -57,6 +57,9 @@ async function connect(p: Page, which: "payer" | "merchant") {
 
 // 1. Dashboard (no wallet: shows the demo merchant)
 await page.goto(APP);
+await page.getByRole("heading", { name: /Pay with any token/ }).waitFor();
+await shot(page, "0-landing");
+await page.goto(`${APP}/dashboard`);
 await page.getByRole("heading", { name: "Dashboard" }).waitFor();
 await page.getByText("Recent payments").waitFor();
 await shot(page, "1-dashboard");
@@ -67,7 +70,7 @@ await shot(page, "2-shop");
 const [popup] = await Promise.all([context.waitForEvent("page"), page.getByRole("button", { name: /Pay with any token/ }).click()]);
 popup.on("pageerror", (e) => errors.push(e.message));
 await popup.setViewportSize({ width: 1100, height: 820 });
-const title = popup.getByText(/Tender checkout · Invoice #/);
+const title = popup.getByText(/Checkout · Invoice #/);
 await title.waitFor();
 const invoiceId = (await title.innerText()).match(/#(\d+)/)![1]!;
 await connect(popup, "payer");
@@ -77,10 +80,13 @@ await shot(popup, "3-checkout-ranked");
 // the pre-selected row is the one marked BEST. Which route wins depends on current pool prices
 // (repeated runs on the same fork move them); e2e/fork.e2e.ts checks the fresh-fork case.
 const best = popup.locator("tr.selected");
-assert.match(await best.innerText(), /BEST/);
+assert.match(await best.innerText(), /Best/i);
 
 // 3. Pay
-await popup.getByRole("button", { name: /^Pay 1\.00 USDC with DEMO$/ }).click();
+await popup.getByRole("button", { name: /^Pay 1\.00 USDC with DEMO/ }).click();
+await popup.getByRole("dialog", { name: "Review payment" }).waitFor();
+await shot(popup, "3b-review-sheet");
+await popup.getByRole("button", { name: "Confirm and pay" }).click();
 await popup.getByText("Payment confirmed").waitFor({ timeout: 90_000 });
 assert.match(await popup.locator(".panel", { hasText: "Payment confirmed" }).innerText(), /exactly 1\.00 USDC/);
 await shot(popup, "4-checkout-paid");
@@ -97,12 +103,13 @@ await page.goto(SHOP);
 const [wcPopup] = await Promise.all([context.waitForEvent("page"), page.getByRole("button", { name: /Pay with USDT/ }).click()]);
 wcPopup.on("pageerror", (e) => errors.push(e.message));
 await wcPopup.setViewportSize({ width: 1100, height: 820 });
-await wcPopup.getByText(/Tender checkout · Invoice #/).waitFor();
+await wcPopup.getByText(/Checkout · Invoice #/).waitFor();
 await connect(wcPopup, "payer");
 await wcPopup.getByText("Best", { exact: true }).waitFor({ timeout: 60_000 });
 assert.match(await wcPopup.locator("tr.selected").innerText(), /USDT \(no swap\)/);
 await shot(wcPopup, "5b-whitechain-checkout");
 await wcPopup.getByRole("button", { name: /^Pay 1\.00 USDT$/ }).click();
+await wcPopup.getByRole("button", { name: "Confirm and pay" }).click();
 await wcPopup.getByText("Payment confirmed").waitFor({ timeout: 90_000 });
 assert.match(await wcPopup.locator(".panel", { hasText: "Payment confirmed" }).innerText(), /exactly 1\.00 USDT/);
 await shot(wcPopup, "5c-whitechain-paid");
@@ -124,7 +131,7 @@ assert.match(await row.innerText(), /0\.25/);
 await shot(page, "6-merchant-refunded");
 
 // 6. Dashboard again, now with activity; agents page
-await page.goto(APP);
+await page.goto(`${APP}/dashboard`);
 await page.locator("tbody tr").first().waitFor();
 await shot(page, "7-dashboard-after");
 await page.goto(`${APP}/agents`);
