@@ -103,7 +103,7 @@ kbd {
 .sidebar-bottom { margin-top: auto; display: flex; flex-direction: column; gap: 8px; }
 
 /* same thin gutter on every side (24px), matching the top */
-.main { padding: var(--s-5) var(--s-5) var(--s-7); min-width: 0; max-width: 1320px; }
+.main { padding: var(--s-5) var(--s-5) var(--s-7); min-width: 0; }
 .main.embed { padding: var(--s-5); max-width: none; }
 
 /* ---------- page header ---------- */
