@@ -29,7 +29,7 @@ One video (about 3:45) for the ETHGlobal submission. It also meets each sponsor'
 | C9 | Merchant page: Refund 0.25 on the Unichain invoice → status **Part refunded** → **Export CSV** → open the file |
 | C10 | Dashboard (all rails in one table) → Agents page (wait 2–3 s for Hedera to load) |
 | C11 | Terminal in `tender/`: `curl -i localhost:8788/.well-known/tender.json`, then `X402_ASSET=hbar bash scripts/hedera-live.sh` (two purchases settle, the third is refused). It takes over the shop on :8788, so record it **after** C3–C9. Spends 1 test HBAR. |
-| C12 | HashScan: one purchase tx (agent −0.5 HBAR → merchant +0.5, fee paid by `0.0.7162784`), keep the **address bar visible**; then the topic `0.0.11345065` (purchase, purchase, refused) |
+| C12 | HashScan: open the first `== settled:` link C11 printed (agent −0.5 HBAR → merchant +0.5, fee paid by `0.0.7162784`), keep the **address bar visible**; then the topic `0.0.11345065` (the run reuses it: the newest messages are purchase, purchase, refused) |
 | C13 | Unichain Blockscout: verified `UniswapCheckout` and `CheckoutHook`, then the two live proof txs |
 | C14 | Whitechain explorer: verified `CheckoutCore`, the USDT payment, the 0.40 refund, the one-signature permit payment |
 | C15 | Terminal: `cd contracts && forge test` (41 passed: 44 checks, the 4 invariants run as one campaign), `npx vitest run` (56 passed) |
