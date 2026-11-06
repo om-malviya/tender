@@ -6,7 +6,10 @@
 #        RPC=http://127.0.0.1:8546 SKIP_VERIFY=1 bash scripts/deploy-whitechain.sh   (dry run on a local fork)
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# .env fills in what isn't set, but never overrides a key/RPC passed on the command line (fork rehearsals)
+ARG_PK=${DEPLOYER_PK:-}
 [ -f .env ] && { set -a; source .env; set +a; }
+[ -n "$ARG_PK" ] && DEPLOYER_PK=$ARG_PK
 RPC=${RPC:-https://rpc.testnet.whitechain.io/}
 EXPLORER=https://explorer.testnet.whitechain.io
 USDT=0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7
@@ -35,14 +38,26 @@ fi
 cd ..
 
 # proof: invoice -> approve + pay -> partial refund (deployer plays merchant and payer)
-NOW=$(date +%s)
-cast send "$CORE" "createInvoice(address,uint256,uint64,bytes32)" "$USDT" 1000000 $((NOW + 3600)) "$(cast keccak proof-usdt)" --private-key "$DEPLOYER_PK" --rpc-url "$RPC" -q >/dev/null
-ID=$(( $(cast call "$CORE" "nextInvoiceId()(uint256)" --rpc-url "$RPC") - 1 ))
-cast send "$USDT" "approve(address,uint256)" "$CORE" 1000000 --private-key "$DEPLOYER_PK" --rpc-url "$RPC" -q >/dev/null
-PAY=$(cast send "$CORE" "payInvoice(uint256)" "$ID" --private-key "$DEPLOYER_PK" --rpc-url "$RPC" --json | jq -r .transactionHash)
+# Public RPCs can time out on receipts and serve stale reads from a lagging node, so: wait long for every
+# receipt, fail loudly on a reverted one, and take each new invoice id from its own InvoiceCreated event.
+tx() { # cast send args... -> prints the tx hash; exits if the tx reverted
+  local r; r=$(cast send "$@" --private-key "$DEPLOYER_PK" --rpc-url "$RPC" --timeout 300 --json)
+  [ "$(echo "$r" | jq -r .status)" = "0x1" ] || { echo "transaction failed: $*" >&2; echo "$r" >&2; exit 1; }
+  echo "$r" | jq -r .transactionHash
+}
+new_invoice() { # checkout settleToken amount orderRefText -> prints the invoice id
+  local r; r=$(cast send "$1" "createInvoice(address,uint256,uint64,bytes32)" "$2" "$3" $(( $(date +%s) + 3600 )) "$(cast keccak "$4")" \
+    --private-key "$DEPLOYER_PK" --rpc-url "$RPC" --timeout 300 --json)
+  [ "$(echo "$r" | jq -r .status)" = "0x1" ] || { echo "createInvoice failed" >&2; exit 1; }
+  local c; c=$(echo "$1" | tr A-Z a-z)
+  cast to-dec "$(echo "$r" | jq -r --arg c "$c" '[.logs[] | select((.address | ascii_downcase) == $c)][0].topics[1]')"
+}
+ID=$(new_invoice "$CORE" "$USDT" 1000000 proof-usdt)
+tx "$USDT" "approve(address,uint256)" "$CORE" 1000000 >/dev/null
+PAY=$(tx "$CORE" "payInvoice(uint256)" "$ID")
 echo "== USDT payment  invoice #$ID  $EXPLORER/tx/$PAY"
-cast send "$USDT" "approve(address,uint256)" "$CORE" 400000 --private-key "$DEPLOYER_PK" --rpc-url "$RPC" -q >/dev/null
-REFUND=$(cast send "$CORE" "refund(uint256,uint256)" "$ID" 400000 --private-key "$DEPLOYER_PK" --rpc-url "$RPC" --json | jq -r .transactionHash)
+tx "$USDT" "approve(address,uint256)" "$CORE" 400000 >/dev/null
+REFUND=$(tx "$CORE" "refund(uint256,uint256)" "$ID" 400000)
 echo "== refund 0.40   invoice #$ID  $EXPLORER/tx/$REFUND"
 
 cat > deployments/whitechain-sepolia.env <<EOF
