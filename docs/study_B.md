@@ -1641,3 +1641,28 @@ The **browser** version passes too ([ui.e2e.ts L95](tender/e2e/ui.e2e.ts#L95)): 
 - "Why HBAR?" → "Circle's Hedera testnet faucet wasn't delivering. The endpoint is USDC by default; one setting switches it, and the agent only accepts HBAR because its policy names a rate."
 - "What stops the agent overspending?" → "Its policy checks the real 402 price before signing: allowlist, per-merchant cap, total budget, human approval above a threshold. And the x402 library caps each payment again. Message 3 in the topic is a refusal."
 - "Who paid the fees?" → "The facilitator, Blocky402. The agent only signs the transfer; Blocky402 submits it and pays the network fee."
+
+---
+
+### B30. Browser QA: every screen of the demo, and every button, on live data (Nov 7)
+**How it was tested.**
+- **Live data:** [scripts/live-local.sh](tender/scripts/live-local.sh) runs the real app against the **live testnets**. [e2e/live.visual.ts](tender/e2e/live.visual.ts) opens every page at desktop (1440 px) and phone (390 px) width and checks four things: the values the chains really hold (4 invoices, the 0.40 refund, the HBAR sales, the audit log), console errors, failed requests, and sideways scrolling.
+- **Every button and link:** the same script then clicks every visible button and link on every page. **Final result: 178 of 178 checks pass.**
+- **Demo screens:** the video's payment screens (ranked routes, review, receipt, Whitechain checkout, refund) need a wallet, so they were walked through on the demo stack with dev wallets. Every screenshot was looked at by eye.
+
+**What it found, and what changed**
+
+| Found | Fix |
+|---|---|
+| Ranked-routes table cut off on the right; hooked and split routes in raw text; the "Best" row broken across lines; unaffordable routes listed above "Best" | One chip style for every route kind, the source shown under the route (one column fewer), usable routes first, one accent bar on the selected row |
+| "Refunded" shown for a 0.40-of-1.00 refund; a paid invoice's page said "Amount due" and step 1 | "Part refunded" vs "Refunded"; "Amount", "Refunded to payer 0.40", all steps ticked |
+| Wallet badge said Unichain while paying a Whitechain invoice | The wallet switches to the invoice's chain once the connection is established |
+| Agents page: $0.00 revenue next to an audit log with purchases | HBAR x402 sales counted in the ledger at the configured rate (test uses the live transaction's exact shape) |
+| Landing and shop scrolled sideways on phones; the shop's code box cut off; "the script below" with nothing below | Panels can shrink so tables scroll inside them; the page clips its decorative glow; the shop shows its real integration code, read from its own source with the token masked |
+| HTTP 500 under load: Unichain's public RPC answered 429 "rate limit exceeded" | The API retries, then falls back to a second provider (PublicNode) |
+
+**Why the Agents page shows 4 purchases but the audit log 2 + 1 refused:** the first two sales were made during debugging, before the audit-topic fix, so their log entries sit in two earlier topics. All four are real payments the merchant received.
+
+**Judge questions**
+- "How did you test the frontend?" → "A script drives a real browser against the live testnets, checks every page at desktop and phone width against what the chains hold, then clicks every button and link: 178 checks. I also reviewed every demo screen by eye."
+- "What if many people open the dashboard at once?" → "The public Unichain RPC rate-limits event-log scans; we saw it in testing. The API retries and then switches to a second provider."
