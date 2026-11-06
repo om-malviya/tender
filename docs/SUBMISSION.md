@@ -28,8 +28,8 @@ Proof on Unichain Sepolia (contracts verified on Blockscout): any-token payment 
 
 A **drop-in USDT checkout a merchant adds in about 20 lines** (23 in our demo shop), with **both the merchant and the customer view**, and flows **past the first payment: partial refunds recorded on-chain and a CSV export the accountant can open**.
 
-- `CheckoutCore` deployed and **verified on Whitechain Sepolia** (chain 1874): _TBD_.
-- Payment settled in **Whitechain USDT** (`0xcedf…55a7`): _TBD_; one-signature permit payment: _TBD_; partial refund: _TBD_.
+- `CheckoutCore` deployed and **verified on Whitechain Sepolia** (chain 1874): https://explorer.testnet.whitechain.io/address/0x013aFEBD608074993D87C299952116b5c3135795
+- Payment settled in **Whitechain USDT** (`0xcedf…55a7`, obtained by swapping WBT on the testnet DEX, not self-minted): https://explorer.testnet.whitechain.io/tx/0x41485818a21c88008ffbdee188c142278a0d2686068e65e707a25e53a655de64; one-signature permit payment: https://explorer.testnet.whitechain.io/tx/0x9620ce57304e80ec33ca18143560688409e5f4793a121ad7b62aa791c576ccf1; partial refund: https://explorer.testnet.whitechain.io/tx/0x798631d466d2c2c43662b1ba7eade7f36ca9404b32ce5204b95a234f7d8dd710. Contract balance is 0 after each.
 - Why on-chain settlement on Whitechain: final USDT settlement in seconds straight to the merchant's wallet, a public receipt the customer can verify, refunds with an on-chain record, and an exportable ledger from the same payment, which card and bank rails can't give a small merchant.
 - Widget: `app/public/tender.js`; integration: `demo-shop/public/index.html`; merchant view: `app/src/pages/MerchantPage.tsx`.
 - `WHITECHAIN_FEEDBACK.md` included. Steady commit history. 2–4 min video shows customer, merchant and agent.
