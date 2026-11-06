@@ -12,6 +12,7 @@
       header { display: flex; align-items: center; gap: 10px; padding: 18px 28px; border-bottom: 1px solid var(--border); }
       header b { font-size: 18px; }
       main { max-width: 980px; margin: 36px auto; padding: 0 20px; display: grid; grid-template-columns: 1.1fr 1fr; gap: 28px; }
+      main > * { min-width: 0; } /* grid columns may shrink below their content, so the code sample scrolls */
       .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 22px; }
       .art { height: 220px; border-radius: 10px; background: radial-gradient(circle at 30% 30%, #f3b26b, #8a4b17); display: grid; place-items: center; font-size: 72px; }
       h1 { margin: 16px 0 4px; font-size: 24px; }
@@ -22,7 +23,8 @@
       #status { margin-top: 8px; min-height: 24px; color: var(--muted); }
       #status.ok { color: #6ee7a8; font-weight: 600; }
       code { font: 12.5px ui-monospace, Menlo, monospace; color: var(--accent); }
-      pre { background: #0f0c09; border: 1px solid var(--border); border-radius: 10px; padding: 12px; overflow-x: auto; font: 12px ui-monospace, Menlo, monospace; color: var(--muted); }
+      pre { background: #0f0c09; border: 1px solid var(--border); border-radius: 10px; padding: 12px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px ui-monospace, Menlo, monospace; color: var(--muted); }
+      pre.code { max-height: 340px; overflow: auto; white-space: pre; font-size: 11.5px; line-height: 1.55; }
       .muted { color: var(--muted); }
       @media (max-width: 760px) { main { grid-template-columns: 1fr; } }
     </style>
@@ -42,10 +44,11 @@
       <section class="card">
         <h2 style="margin-top: 0">For AI agents</h2>
         <p class="muted">Agents don't fill in checkouts. Our chai price index is sold per request over <b>x402</b> on Hedera:</p>
-        <pre>GET /api/agent/dataset   → 402 Payment Required ($__AGENT_PRICE_USD__ USDC)
-GET /.well-known/tender.json   → what's for sale</pre>
+        <pre>GET /.well-known/tender.json → what's for sale
+GET /api/agent/dataset       → 402: pay $__AGENT_PRICE_USD__ on Hedera</pre>
         <h2>How this shop integrates Tender</h2>
-        <p class="muted">The whole integration is the script below (view source): one tag for the widget, one call to our own server to create the invoice, one to confirm the payment on-chain.</p>
+        <p class="muted">This is the whole integration, read live from this page's own source: one tag for the widget, one call to our own server to create the invoice, one to confirm the payment on-chain.</p>
+        <pre class="code" id="integration"></pre>
       </section>
     </main>
 
@@ -72,6 +75,15 @@ GET /.well-known/tender.json   → what's for sale</pre>
           onClose: () => show(`Checkout closed. Order #${order.invoiceId} is still payable for 30 minutes.`),
         });
       }
+    </script>
+      <script>
+      // Show the integration above exactly as it runs: the widget tag + the inline script, shop token masked.
+      const tag = document.querySelector('script[src$="/tender.js"]').outerHTML;
+      const code = document.querySelectorAll("script:not([src])")[0].textContent.replace(/"x-shop-token": "[^"]*"/, '"x-shop-token": "…"');
+      const lines = code.replace(/^\n+|\s+$/g, "").split("\n");
+      const indent = Math.min(...lines.filter((l) => l.trim()).map((l) => l.match(/^ */)[0].length));
+      const body = lines.map((l) => "  " + l.slice(indent)).join("\n");
+      document.getElementById("integration").textContent = `${tag}\n<script>\n${body}\n</${"script"}>`;
     </script>
   </body>
 </html>
