@@ -10,7 +10,7 @@ A merchant creates an invoice for an exact stablecoin amount. The customer pays 
 
 What's new: a **Uniswap v4 CheckoutHook** that settles invoices from inside any router's swap (the pool itself is the payment terminal); **basket payments** (one invoice from several tokens); a visible **ranking panel** with impact-sized slippage and split routing; and three rails for one merchant: any-token on Unichain, **USDT invoices, refunds and CSV export on Whitechain**, and **x402 sales to AI agents on Hedera**, all in one dashboard.
 
-Non-custodial, no admin: the contracts hold zero tokens after every call. 44 Solidity checks (real v4 PoolManager, fuzz, invariants), 51 TypeScript tests, local-fork and browser end-to-end runs.
+Non-custodial, no admin: the contracts hold zero tokens after every call. 44 Solidity checks (real v4 PoolManager, fuzz, invariants), 55 TypeScript tests, local-fork and browser end-to-end runs.
 
 ## Uniswap Foundation: Build with Uniswap
 
@@ -38,8 +38,8 @@ A **drop-in USDT checkout a merchant adds in about 20 lines** (23 in our demo sh
 
 An **x402-protected endpoint that settles on Hedera testnet through Blocky402**, and an **agent that discovers it and completes a paid request with no human**.
 
-- Endpoint: `GET /api/agent/dataset` on the demo shop (`@x402/hono`, Hedera exact scheme), priced in **HTS USDC** (`0.0.429274`). Discovery via `/.well-known/tender.json`.
+- Endpoint: `GET /api/agent/dataset` on the demo shop (`@x402/hono`, Hedera exact scheme), priced in **HTS USDC** (`0.0.429274`) by default or native HBAR (`X402_ASSET=hbar`). Discovery via `/.well-known/tender.json`. The live run settled in **HBAR** because Circle's Hedera testnet USDC faucet wasn't delivering on Nov 7.
 - Agent with **spending controls**: merchant allowlist, per-merchant cap, total budget, human approval above a threshold, enforced on the real 402 price tag before signing (`agent/src/policy.ts`). The demo shows two purchases and a third **refused** by the policy.
-- **HCS topic as a tamper-evident audit log** of every agent decision (bought / refused, amount, reason, transaction id): topic _TBD_, shown on the Agents page.
-- Settled payment: Hedera transaction _TBD_, HashScan _TBD_. Sales show in the merchant dashboard from the mirror node.
+- **HCS topic as a tamper-evident audit log** of every agent decision (bought / refused, amount, reason, transaction id): topic 0.0.11345065 (https://hashscan.io/testnet/topic/0.0.11345065), shown on the Agents page.
+- Settled payments (agent, no human): https://hashscan.io/testnet/transaction/0.0.7162784@1793996113.115144711 and https://hashscan.io/testnet/transaction/0.0.7162784@1793996119.194396627; the third purchase was refused by the policy before signing (message 3 in the topic).
 - README covers setup, architecture and the payment flow. Video ≤5 min with the HashScan link.

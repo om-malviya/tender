@@ -18,7 +18,7 @@ ETHGlobal Mumbai 2026 · solo submission · tracks: Uniswap Foundation (Build wi
 | Unichain Sepolia (1301) | `CheckoutHook` (v4 hook, verified) | [`0x40a7…8044`](https://unichain-sepolia.blockscout.com/address/0x40a7409c828e62e4278ff8e4a9f30bc6ecf88044) | invoice #2 paid through Uniswap's `PoolSwapTest` router; the hook settled it: [`0x5445265c…`](https://unichain-sepolia.blockscout.com/tx/0x5445265c0fdbb79c5afc4f745dd9d1b3df5418584ad471f6389fb424cec857a8) |
 | Unichain Sepolia (1301) | `DemoToken` (verified) | [`0x29ad…339c`](https://unichain-sepolia.blockscout.com/address/0x29adcdf890ad23c7877f51a4005555a93cea339c) | the "wrong token" payers hold; demo pools: DEMO/WETH, DEMO/USDC (thin), WETH/USDC, plus two hooked pools |
 | Whitechain Sepolia (1874) | `CheckoutCore` (verified) | [`0x013a…5795`](https://explorer.testnet.whitechain.io/address/0x013aFEBD608074993D87C299952116b5c3135795) | USDT payment (1.00): [`0x41485818…`](https://explorer.testnet.whitechain.io/tx/0x41485818a21c88008ffbdee188c142278a0d2686068e65e707a25e53a655de64) · partial refund (0.40): [`0x798631d4…`](https://explorer.testnet.whitechain.io/tx/0x798631d466d2c2c43662b1ba7eade7f36ca9404b32ce5204b95a234f7d8dd710) · one-signature permit payment (0.50): [`0x9620ce57…`](https://explorer.testnet.whitechain.io/tx/0x9620ce57304e80ec33ca18143560688409e5f4793a121ad7b62aa791c576ccf1) |
-| Hedera testnet | x402 endpoint `GET /api/agent/dataset` | facilitator: Blocky402 | settled payment: _TBD_ (HashScan: _TBD_) |
+| Hedera testnet | x402 endpoint `GET /api/agent/dataset` (merchant `0.0.11344182`) | facilitator: Blocky402 (`0.0.7162784` pays the fees) | agent purchases settled with no human: [`0.0.7162784@1793996113.115144711`](https://hashscan.io/testnet/transaction/0.0.7162784@1793996113.115144711), [`0.0.7162784@1793996119.194396627`](https://hashscan.io/testnet/transaction/0.0.7162784@1793996119.194396627); third purchase **refused** by the spending policy; every decision in HCS audit topic [`0.0.11345065`](https://hashscan.io/testnet/topic/0.0.11345065) |
 
 Uniswap contracts used (not ours): v4 PoolManager `0x00B036B58a818B1BC34d502D3fE730Db729e62AC`, v4 Quoter `0x56DCD40A3F2d466F48e7F48bDBE5Cc9B92Ae4472`, PoolSwapTest router `0x9140a78c1a137c7ff1c151ec8231272af78a99a4`, Circle USDC `0x31d0220469e10c4E71834a79b1f276d740d3768F`. Whitechain USDT `0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7`.
 
@@ -43,7 +43,8 @@ Uniswap contracts used (not ours): v4 PoolManager `0x00B036B58a818B1BC34d502D3fE
 **Hedera x402**
 - Paywalled endpoint (`@x402/hono` + Hedera exact scheme, facilitator Blocky402): [`demo-shop/server/app.ts`](demo-shop/server/app.ts) (the `paymentMiddleware` block). Discovery manifest: `/.well-known/tender.json`.
 - Autonomous agent with spending controls (allowlist, per-merchant cap, total budget, human approval above a threshold): [`agent/src/run.ts`](agent/src/run.ts), policy in [`agent/src/policy.ts`](agent/src/policy.ts), limits in [`agent/policy.json`](agent/policy.json).
-- Settles in HTS USDC (`0.0.429274`). Sales appear in the merchant dashboard from the mirror node: [`packages/core/src/hedera.ts`](packages/core/src/hedera.ts).
+- Priced in HTS USDC (`0.0.429274`) by default; `X402_ASSET=hbar` prices the same endpoint in native HBAR at a set rate. **The live proof settled in HBAR**: Circle's Hedera testnet faucet wasn't delivering USDC to anyone on Nov 7 (we checked 2,500 recent transfers). The agent only accepts HBAR because its policy names a rate, and the x402 library's own spend controls cap each HBAR payment at the same limit.
+- USDC sales appear in the merchant dashboard from the mirror node ([`packages/core/src/hedera.ts`](packages/core/src/hedera.ts)); HBAR sales are not listed there yet.
 
 ## Architecture
 
@@ -54,7 +55,7 @@ demo-shop (:8788)  ── invoice via merchant key ──►  CheckoutCore / Uni
 app (:5173) ──/api/rank──► server (:8787, read-only) ──► v4 Quoter [+ Trading API]
    │                                                     ▲ events (getLogs) → dashboard, CSV
    └── hook route: generic v4 router ── swap(hookData) ──► hooked pool ── CheckoutHook ── merchant
-agent/ ── 402 ──► demo-shop x402 paywall ──► Blocky402 facilitator ──► Hedera testnet (USDC)
+agent/ ── 402 ──► demo-shop x402 paywall ──► Blocky402 facilitator ──► Hedera testnet (USDC or HBAR)
 ```
 
 Full walkthrough, design trade-offs and backlog: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
@@ -66,7 +67,7 @@ Full walkthrough, design trade-offs and backlog: [`docs/ARCHITECTURE.md`](docs/A
 ```bash
 npm install
 cd contracts && forge install && forge test && cd ..     # 44 Solidity checks (forge prints 41: 4 invariants run as one campaign)
-npx vitest run                                            # 51 TypeScript tests
+npx vitest run                                            # 55 TypeScript tests
 bash scripts/e2e-fork.sh                                  # end-to-end on local copies of Unichain + Whitechain
 bash scripts/dev-fork.sh                                  # the whole product: http://localhost:5173 and :8788
 ```
@@ -77,7 +78,7 @@ Deploy for real: `.env.example` lists every variable; scripts are `contracts/scr
 
 ## Tests
 
-Every category has at least three independent checks, so a pass isn't a coincidence. **95 automated checks** (44 Foundry + 51 Vitest; `forge test` prints 41 because it runs the 4 invariants as one campaign), plus end-to-end runs and the live testnet proofs above.
+Every category has at least three independent checks, so a pass isn't a coincidence. **99 automated checks** (44 Foundry + 55 Vitest; `forge test` prints 41 because it runs the 4 invariants as one campaign), plus end-to-end runs and the live testnet proofs above.
 
 | Category | Sponsor | Checks | What they prove | File |
 |---|---|---|---|---|
@@ -93,12 +94,12 @@ Every category has at least three independent checks, so a pass isn't a coincide
 | Trading API parser | Uniswap | 4 | executable v4 routes vs v3 / hooked / split (shown, not executed); multi-hop order; malformed quotes rejected | `packages/core/test/core.test.ts` |
 | Mirror node + CSV | Hedera, Whitechain | 3 | Hedera sales parsed from the mirror node; CSV export escapes and labels correctly | `packages/core/test/core.test.ts` |
 | HCS audit log | Hedera | 4 | topic messages decoded newest-first; right mirror URL; errors surfaced; empty topics | `packages/core/test/core.test.ts` |
-| Agent spending policy | Hedera | 6 | allowlist, per-merchant cap, total budget, human approval threshold, applied to the real 402 price | `agent/test/policy.test.ts` |
+| Agent spending policy | Hedera | 9 | allowlist, per-merchant cap, total budget, human approval threshold, applied to the real 402 price; HBAR understood only at the rate the policy names; the audit topic survives every purchase (one log) | `agent/test/policy.test.ts` |
 | Tender API | all | 5 | ranking endpoint, input validation, invoice reads, chains without a deployment refused | `server/test/app.test.ts` |
 | Audit log API | Hedera | 3 | malformed topic ids → 400; entries returned; empty when not configured | `server/test/app.test.ts` |
-| Demo shop | Whitechain, Hedera | 3 | x402 paywall manifest, invoice-creation token and rate limit | `server/test/app.test.ts` |
+| Demo shop | Whitechain, Hedera | 4 | x402 paywall manifest, price in USDC or HBAR (the exact amount the 402 demands), invoice-creation token and rate limit | `server/test/app.test.ts` |
 
-**Are the tests real?** We checked the newest ones by breaking the code on purpose: wrong mirror-node ordering, a quoter that never clears its queue, no Multicall3 fallback, swallowed mirror errors, unvalidated topic ids, a lost split-route label, basket legs quoted without each other's price impact, the pool allowlist switched off. Every one of those bugs made a test fail.
+**Are the tests real?** We checked the newest ones by breaking the code on purpose: wrong mirror-node ordering, a quoter that never clears its queue, no Multicall3 fallback, swallowed mirror errors, unvalidated topic ids, a lost split-route label, basket legs quoted without each other's price impact, the pool allowlist switched off, an HBAR price off by 100×, a policy ignoring its HBAR rate, a ledger that forgets its audit topic. Every one of those bugs made a test fail.
 
 **End-to-end** (local forks of the real testnets): `e2e/fork.e2e.ts` (Unichain: invoice → ranking → swap payment → hook payment → basket → refund → CSV), `e2e/whitechain.e2e.ts` (USDT: approve+pay, permit pay, refund, CSV), `e2e/ui.e2e.ts` (headless browser: landing → shop → checkout → pay → shop confirms → Whitechain → merchant refund). The deploy runbooks (`scripts/deploy-*.sh`) are rehearsed on forks before every real run.
 
