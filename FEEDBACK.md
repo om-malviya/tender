@@ -30,6 +30,21 @@ exact-output swaps on the v4 PoolManager (Unichain Sepolia), and ranks routes wi
    is supported there or what the classic quote's `route` field looks like for v4 pools (hooks, tickSpacing).
    [To fill in after testing with our API key.]
 
+6. **`afterSwapReturnDelta` can only touch the *unspecified* currency.** Our CheckoutHook takes the invoice amount
+   out of the swap's output, which is only possible for exact-INPUT swaps (for exact-output the unspecified side is
+   the input). That's by design and makes sense once you see it, but the hooks guide doesn't say it up front; we
+   lost time trying to support exact-output payments in the hook before reading `Hooks.afterSwap`.
+7. **Hook address mining from a script.** `new Hook{salt: s}()` inside `forge script` did not land on the mined
+   CREATE2 address in our run; calling the deterministic deployer (0x4e59…956C) directly with `salt ++ initcode`
+   did. A one-paragraph "deploying a hook from a Foundry script" recipe (with `vm.computeCreate2Address`) would help.
+
+## What we built on the hook side
+A **CheckoutHook**: `afterSwap` + `afterSwapReturnDelta`. A swap through a hooked pool carrying
+`hookData = (invoiceId, payer)` pays a merchant invoice: the hook takes exactly the invoice amount of the output to
+the merchant via `PoolManager.take`, the swapper keeps the rest, and the invoice is marked paid. Any router that
+forwards hookData can pay an invoice (we demo with Uniswap's own PoolSwapTest). v4-core's `Deployers` +
+`deployCodeTo` at a flag address made testing this trivial.
+
 ## One concrete improvement
 Publish, per testnet, a short list of pools that Uniswap keeps at sane prices with real liquidity (e.g. WETH/USDC
 0.05% on Unichain Sepolia), so routers and demos have something trustworthy to point at.
