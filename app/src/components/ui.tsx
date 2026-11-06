@@ -52,9 +52,11 @@ export function Panel(props: { title: string; subtitle?: ReactNode; actions?: Re
 }
 
 // success is green, open is the accent, everything else is neutral grey
-const statusColor: Record<string, string> = { Paid: "green", Open: "accent", Expired: "", Cancelled: "", Refunded: "" };
-export function StatusPill({ status, refunded }: { status: InvoiceStatus; refunded?: boolean }) {
-  const label = status === "Paid" && refunded ? "Refunded" : status;
+const statusColor: Record<string, string> = { Paid: "green", Open: "accent", Expired: "", Cancelled: "", Refunded: "", "Part refunded": "green" };
+/** `refunded` and `amount` are raw token units; a partial refund is still a paid invoice, a full one is not. */
+export function StatusPill({ status, refunded, amount }: { status: InvoiceStatus; refunded?: string; amount?: string }) {
+  const r = BigInt(refunded ?? "0");
+  const label = status !== "Paid" || r === 0n ? status : amount !== undefined && r >= BigInt(amount) ? "Refunded" : "Part refunded";
   return <span className={`pill ${statusColor[label] ?? ""}`}>{label}</span>;
 }
 
@@ -86,18 +88,11 @@ export function Addr({ value, chain, kind = "address" }: { value?: string; chain
 }
 
 /** DEMO →0.30% WETH →0.05% USDC */
-export function RouteChips({ label }: { label: string }) {
-  if (label.includes(" split: ") || label.includes(" · ")) {
-    return (
-      <span className="route">
-        <span className="token">{label}</span>
-      </span>
-    );
-  }
-  const parts = routeParts(label);
+/** A path like "DEMO -0.30%-> WETH -0.05%-> USDC" as token chips joined by fee hops. */
+function PathChips({ path }: { path: string }) {
   return (
-    <span className="route">
-      {parts.map((p, i) =>
+    <>
+      {routeParts(path).map((p, i) =>
         i % 2 === 0 ? (
           <span key={i} className="token">
             {p}
@@ -108,6 +103,42 @@ export function RouteChips({ label }: { label: string }) {
           </span>
         ),
       )}
+    </>
+  );
+}
+
+/** Every route label the ranker produces, drawn the same way: plain paths, "· hooked pool" routes,
+ *  "X split: 75% <path> + 25% <path>" splits, and "USDC (no swap)". */
+export function RouteChips({ label }: { label: string }) {
+  const split = label.match(/^\S+ split: (.+)$/);
+  if (split) {
+    return (
+      <span className="route-split">
+        {split[1]!.split(" + ").map((leg, i) => {
+          const m = leg.match(/^(\d+%) (.+)$/);
+          return (
+            <span key={i} className="route">
+              <span className="pct">{m?.[1]}</span>
+              <PathChips path={m?.[2] ?? leg} />
+            </span>
+          );
+        })}
+      </span>
+    );
+  }
+  const [path, tag] = label.split(" · ") as [string, string | undefined];
+  const direct = path.match(/^(\S+) \(no swap\)$/);
+  return (
+    <span className="route">
+      {direct ? (
+        <>
+          <span className="token">{direct[1]}</span>
+          <span className="hop">no swap</span>
+        </>
+      ) : (
+        <PathChips path={path} />
+      )}
+      {tag && <span className="route-tag">{tag}</span>}
     </span>
   );
 }

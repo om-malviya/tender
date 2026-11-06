@@ -129,7 +129,10 @@ kbd {
 .panel-body { padding: var(--card-pad); }
 .panel-foot { padding: var(--s-4) var(--card-pad); border-top: 1px solid var(--border); font-size: var(--t-sm); }
 
-.table-wrap { overflow-x: auto; }
+.table-wrap { overflow-x: auto; max-width: 100%; }
+/* flex/grid children default to min-width:auto (never narrower than their content): let panels shrink so a
+   wide table scrolls inside its own box instead of pushing the page sideways */
+.panel, .section > * { min-width: 0; }
 table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 th {
   text-align: left; font-size: var(--t-sm); font-weight: 500; letter-spacing: 0.01em;
@@ -139,7 +142,8 @@ td { padding: 14px var(--card-pad); border-bottom: 1px solid var(--border); vert
 tr:last-child td { border-bottom: 0; }
 tbody tr:hover td { background: var(--hover); }
 tr.selectable { cursor: pointer; }
-tr.selected td { background: var(--accent-soft) !important; box-shadow: inset 2px 0 0 var(--accent); }
+tr.selected td { background: var(--accent-soft) !important; }
+tr.selected td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
 tr.dim td { opacity: 0.5; }
 td.num, th.num { text-align: right; white-space: nowrap; }
 td .route { flex-wrap: nowrap; }
@@ -162,10 +166,16 @@ td .route { flex-wrap: nowrap; }
 
 .route { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
 .token { font-family: var(--mono); font-size: var(--t-sm); padding: 2px 7px; border-radius: 5px; background: var(--panel-2); border: 1px solid var(--border); color: var(--text-2); }
-.hop { color: var(--faint); font-size: var(--t-sm); }
+.hop { color: var(--faint); font-size: var(--t-sm); white-space: nowrap; }
+.token { white-space: nowrap; }
+.route-split { display: flex; flex-direction: column; gap: 6px; }
+.route-split .pct { min-width: 30px; color: var(--muted); font-size: var(--t-sm); font-variant-numeric: tabular-nums; }
+.route-tag { color: var(--muted); font-size: var(--t-xs); white-space: nowrap; margin-left: 2px; }
+.route-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 
 /* ---------- buttons & inputs ---------- */
 .btn {
+  white-space: nowrap; /* a button label never breaks onto two lines */
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   height: var(--control); padding: 0 var(--s-4); border-radius: 7px; border: 1px solid var(--border-strong);
   background: var(--panel-2); color: var(--text); font: inherit; font-weight: 500; cursor: pointer;
@@ -276,7 +286,7 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
 }
 
 /* ---------- landing ---------- */
-.landing { --neon-a: #8f91e8; --neon-b: #cbbff0; --neon-c: #8fd3e0; --wrap: 1200px; }
+.landing { overflow-x: clip; --neon-a: #8f91e8; --neon-b: #cbbff0; --neon-c: #8fd3e0; --wrap: 1200px; }
 .topbar {
   position: sticky; top: 0; z-index: 20; height: 64px; background-image: none; display: flex; align-items: center; justify-content: space-between; gap: var(--s-5);
   padding: 0 var(--s-5); background: rgba(8, 9, 10, 0.82); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border);

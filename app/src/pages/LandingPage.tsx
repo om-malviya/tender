@@ -144,7 +144,7 @@ export function LandingPage() {
             <span>via Uniswap swaps</span>
           </div>
           <div>
-            <b>44 + 55</b>
+            <b>44 + 56</b>
             <span>Solidity + TypeScript tests</span>
           </div>
           <div>
@@ -179,7 +179,7 @@ export function LandingPage() {
             A drop-in widget a shop adds in about 20 lines. Partial refunds recorded on-chain and a CSV the accountant can open.
           </Ticket>
           <Ticket n="06 · Hedera x402" title="Sell to AI agents per request" seed={67}>
-            HTTP 402 price tags settled in USDC on Hedera. The agent pays inside a spending policy, with no checkout form and no human.
+            HTTP 402 price tags settled on Hedera, in USDC or HBAR. The agent pays inside a spending policy, with no checkout form and no human.
           </Ticket>
         </div>
       </section>
@@ -251,7 +251,7 @@ export function LandingPage() {
             ["Uniswap v4", "PoolManager flash accounting for exact-output swaps; the Quoter for ranking; a v4 hook as the checkout terminal.", "sponsor"],
             ["Unichain Sepolia", "Where the any-token checkout and the hook live. Circle USDC as the settle token.", "chain"],
             ["Whitechain Sepolia", "USDT invoices with one-signature permit payments, refunds and the accountant CSV.", "sponsor"],
-            ["Hedera · x402", "HTTP 402 payments settled in USDC on Hedera; the facilitator pays the network fee; agents pay inside a spending policy.", "sponsor"],
+            ["Hedera · x402", "HTTP 402 payments settled on Hedera (USDC or HBAR); the facilitator pays the network fee; agents pay inside a spending policy.", "sponsor"],
             ["Foundry", "Contracts, 41 tests incl. 16k-call invariants, deploy scripts with CREATE2 salt mining for the hook.", "tool"],
             ["viem + wagmi", "Chain reads, typed contract calls, wallet connection and exact-amount approvals.", "tool"],
             ["Hono", "The read-only Tender API and the demo shop server.", "tool"],

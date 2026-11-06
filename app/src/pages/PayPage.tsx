@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { erc20Abi, parseEventLogs, type Address, type Hex } from "viem";
-import { useConnection } from "wagmi";
+import { useConnection, useSwitchChain } from "wagmi";
 import { checkoutCoreAbi, hookSwapArgs, poolSwapTestAbi, uniswapCheckoutAbi } from "@tender/core";
 import { api, type BasketView, type ChainKey, type RouteView } from "../lib/api.ts";
 import { useAppConfig } from "../lib/appConfig.ts";
@@ -63,7 +63,17 @@ export function PayPage() {
   const embed = params.get("embed") === "1";
   const cfg = useAppConfig();
   const chainCfg = cfg.chain(chain);
-  const { address, isConnected } = useConnection();
+  const { address, isConnected, chainId: walletChainId, status: walletStatus } = useConnection();
+  const switchChain = useSwitchChain();
+  const askedToSwitch = useRef(false);
+  // The wallet follows the invoice's chain as soon as the page opens (asked once; a refusal is respected and
+  // the pay step asks again), so the wallet badge never says Unichain while you pay a Whitechain invoice.
+  // Wait for a fully established connection: a wallet still reconnecting from a previous page drops the request.
+  useEffect(() => {
+    if (walletStatus !== "connected" || !chainCfg || walletChainId === chainCfg.id || askedToSwitch.current) return;
+    askedToSwitch.current = true;
+    switchChain.mutate({ chainId: chainCfg.id });
+  }, [walletStatus, walletChainId, chainCfg, switchChain]);
   const tx = useTx();
   const queryClient = useQueryClient();
 
@@ -91,6 +101,7 @@ export function PayPage() {
   const recommendedIndex = routes.findIndex((r) => r.affordable && r.executable && !Number.isNaN(r.totalCostUsd));
   const [picked, setPicked] = useState<number | null>(null);
   const selectedIndex = picked !== null && routes[picked] ? picked : recommendedIndex;
+  const displayOrder = routes.map((_, i) => i).sort((a, b) => Number(usableRoute(routes[b]!)) - Number(usableRoute(routes[a]!)));
   const selected = selectedIndex >= 0 ? routes[selectedIndex] : undefined;
 
   const deadline = () => BigInt(Math.floor(Date.now() / 1000) + 10 * 60); // a stale quote can't be mined later
@@ -242,7 +253,9 @@ export function PayPage() {
 
   if (!chainCfg) return <Empty>Unknown network “{chain}”.</Empty>;
 
-  const stepIndex = phase === "idle" ? 0 : phase === "review" ? 1 : phase === "done" ? 3 : 2;
+  // an invoice someone already paid shows the flow as finished (every step ticked), not "step 1: Route"
+  const settledBefore = phase === "idle" && invoiceQ.data?.status === "Paid";
+  const stepIndex = settledBefore ? STEPS.length : phase === "idle" ? 0 : phase === "review" ? 1 : phase === "done" ? 3 : 2;
   const seen = new Set<string>();
   const balances = routes.filter((r) => (seen.has(r.token.address) ? false : (seen.add(r.token.address), true))).map((r) => ({ token: r.token, balance: r.balance }));
   const priceOf = (addr: string) => rankQ.data?.usdPerToken?.[addr.toLowerCase()];
@@ -255,20 +268,28 @@ export function PayPage() {
       ) : (
         <h1 style={{ fontSize: 16, marginBottom: 12 }}>Checkout · Invoice #{id}</h1>
       )}
-      <Stepper steps={STEPS} current={stepIndex} />
+      {(phase !== "idle" || !invoiceQ.data || invoiceQ.data.status === "Open" || invoiceQ.data.status === "Paid") && <Stepper steps={STEPS} current={stepIndex} />}
 
-      <Panel title="Invoice" actions={inv && <StatusPill status={inv.status === "Open" && secondsLeft <= 0 ? "Expired" : inv.status} refunded={inv.refunded !== "0"} />}>
+      <Panel title="Invoice" actions={inv && <StatusPill status={inv.status === "Open" && secondsLeft <= 0 ? "Expired" : inv.status} refunded={inv.refunded} amount={inv.amount} />}>
         <div className="panel-body">
           {invoiceQ.isLoading && <Spinner />}
           {invoiceQ.error && <div className="callout red">{String(invoiceQ.error.message)}</div>}
           {inv && settle && (
             <dl className="kv">
               <div>
-                <dt>Amount due</dt>
+                <dt>{inv.status === "Open" ? "Amount due" : "Amount"}</dt>
                 <dd className="big-amount">
                   {amount(inv.amount, settle.decimals)} <span className="muted">{settle.symbol}</span>
                 </dd>
               </div>
+              {inv.refunded !== "0" && (
+                <div>
+                  <dt>Refunded to payer</dt>
+                  <dd className="big-amount">
+                    {amount(inv.refunded, settle.decimals)} <span className="muted">{settle.symbol}</span>
+                  </dd>
+                </div>
+              )}
               <div>
                 <dt>Merchant</dt>
                 <dd>
@@ -357,7 +378,6 @@ export function PayPage() {
                 <thead>
                   <tr>
                     <th>Route</th>
-                    <th>Source</th>
                     <th className="num">You pay</th>
                     <th className="num">Fees + impact</th>
                     <th className="num">Gas</th>
@@ -366,15 +386,17 @@ export function PayPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {routes.map((r, i) => {
+                  {/* routes you can use first (cheapest first, as ranked), then the ones you can't, dimmed */}
+                  {displayOrder.map((i) => {
+                    const r = routes[i]!;
                     const usable = r.affordable && r.executable;
                     return (
                       <tr key={`${r.source}-${r.label}`} className={`${usable ? "selectable" : "dim"}${i === selectedIndex ? " selected" : ""}`} onClick={() => usable && setPicked(i)}>
                         <td>
-                          <RouteChips label={r.label} />
-                        </td>
-                        <td>
-                          <SourcePill source={r.source} />
+                          <div className="route-cell">
+                            <RouteChips label={r.label} />
+                            <SourcePill source={r.source} />
+                          </div>
                         </td>
                         <td className="num">
                           {amount(r.amountIn, r.token.decimals, 6)} <span className="muted">{r.token.symbol}</span>
@@ -408,8 +430,9 @@ export function PayPage() {
             <div className="panel-foot">
               {selected && inv && settle ? (
                 <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-                  <div className="muted">
-                    Selected: <span className="text-2">{selected.label}</span>
+                  <div className="row" style={{ gap: 10, alignItems: "center" }}>
+                    <span className="muted">Selected</span>
+                    <RouteChips label={selected.label} />
                   </div>
                   <button className="btn primary" disabled={inFlight} onClick={() => setPhase("review")}>
                     {selected.source === "direct"
@@ -562,6 +585,8 @@ export function PayPage() {
     </>
   );
 }
+
+const usableRoute = (r: RouteView) => r.affordable && r.executable;
 
 function useNow() {
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));

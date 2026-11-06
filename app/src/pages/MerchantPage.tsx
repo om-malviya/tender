@@ -145,7 +145,7 @@ function InvoiceRow({ inv, readOnly }: { inv: InvoiceRecordView; readOnly: boole
           <Addr value={inv.payer} chain={chain} />
         </td>
         <td>
-          <StatusPill status={inv.status} refunded={inv.refunded !== "0"} />
+          <StatusPill status={inv.status} refunded={inv.refunded} amount={inv.amount} />
         </td>
         <td className="muted">{age(inv.paidAt ?? inv.createdAt)}</td>
         {!readOnly && (
