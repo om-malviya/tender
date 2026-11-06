@@ -16,6 +16,12 @@ trap cleanup EXIT
 
 bash scripts/fork-up.sh
 set -a; source .env.fork; set +a
+# Hedera isn't forked: the Agents page reads the REAL merchant account and audit topic from the live testnet,
+# if a live run has recorded them (deployments/hedera-testnet.env + HEDERA_MERCHANT_ID in .env).
+if [ -f deployments/hedera-testnet.env ] && grep -q "^HEDERA_MERCHANT_ID=" .env 2>/dev/null; then
+  export HEDERA_MERCHANT_ID=$(grep "^HEDERA_MERCHANT_ID=" .env | cut -d= -f2)
+  export HCS_TOPIC_ID=$(grep "^HEDERA_AUDIT_TOPIC=" deployments/hedera-testnet.env | cut -d= -f2)
+fi
 
 npx tsx server/src/index.ts & pids+=($!)
 npx tsx demo-shop/server/index.ts & pids+=($!)

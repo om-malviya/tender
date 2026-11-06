@@ -106,7 +106,7 @@ await wcPopup.setViewportSize({ width: 1100, height: 820 });
 await wcPopup.getByText(/Checkout · Invoice #/).waitFor();
 await connect(wcPopup, "payer");
 await wcPopup.getByText("Best", { exact: true }).waitFor({ timeout: 60_000 });
-assert.match(await wcPopup.locator("tr.selected").innerText(), /USDT \(no swap\)/);
+assert.match(await wcPopup.locator("tr.selected").innerText(), /USDT\s*no swap/);
 await shot(wcPopup, "5b-whitechain-checkout");
 await wcPopup.getByRole("button", { name: /^Pay 1\.00 USDT$/ }).click();
 await wcPopup.getByRole("button", { name: "Confirm and pay" }).click();
