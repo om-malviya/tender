@@ -1333,3 +1333,23 @@ The **browser** version passes too ([ui.e2e.ts L95](tender/e2e/ui.e2e.ts#L95)): 
 - Status: code + unit tests done; the live topic gets created on the agent's first real run with your Hedera accounts.
 
 **Judge question.** "Why HCS and not just a database log?" → "Anyone can read it, nobody can edit it, and the sequence numbers prove nothing was dropped. HashScan shows it with no trust in us."
+
+---
+
+### B25. Hosting: frontend live on Cloudflare, backend ready for AWS (Nov 6)
+**Decision** (also in PLAN_B.md §6b): the frontend goes on Cloudflare (free), the two backend services (Tender API, demo shop) go on AWS App Runner in Mumbai, and the contracts go on the testnets.
+
+**What's live:** **https://tender.tender-app.workers.dev**
+- Cloudflare moved Pages into Workers, so the site is a Worker that serves static files only ([app/wrangler.jsonc](tender/app/wrangler.jsonc)). `not_found_handling: "single-page-application"` returns `index.html` for unknown paths, which is why a deep link like `/pay/unichain-sepolia/1` loads.
+- The API address is **baked in at build time** (`VITE_API_URL`, read in [app/src/lib/api.ts](tender/app/src/lib/api.ts)). The browser calls it directly; the server allows that with CORS (`app.use("/api/*", cors())` in [server/src/app.ts](tender/server/src/app.ts)).
+- **Offline mode** ([app/src/main.tsx](tender/app/src/main.tsx)): if the API can't be reached, the landing page still renders and the app pages say "The Tender API is offline". It's live this way until the backend is hosted, and it also protects the demo if the backend restarts.
+
+**Backend on AWS: ready but blocked.**
+- [Dockerfile](tender/Dockerfile): one image for both services; the start command picks `npm run server` or `npm run shop`. `tsx` had to move to runtime dependencies or the container couldn't start.
+- [scripts/deploy-aws.sh](tender/scripts/deploy-aws.sh): builds for **linux/amd64** (App Runner's CPU type; this Mac is ARM, hence `docker buildx`), pushes to ECR, creates both services **capped at 2 instances each**, so a burst of traffic can't run up the bill.
+- **Budgets:** $20/month for testing and $100 total, with email alerts, measured *before* credits (otherwise the credits hide real usage).
+- **The blocker:** the AWS account is on the Free plan and its registration is incomplete, so every compute service answers "not signed up". The image is already in ECR; deployment resumes the moment the account is activated.
+
+**Judge questions**
+- "Where is this hosted?" → "Frontend on Cloudflare's edge, free and global; the API and demo shop are containers on AWS App Runner in Mumbai, and the contracts are on Unichain Sepolia and Whitechain Sepolia."
+- "What happens if your server dies mid-demo?" → "The landing page keeps working because it's static, and the app says the API is offline instead of crashing. Payments are on-chain, so nothing is lost: when the API comes back it rebuilds every invoice from contract events."

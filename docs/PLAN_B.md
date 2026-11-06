@@ -464,10 +464,16 @@ X402_FACILITATOR_URL=https://api.testnet.blocky402.com
 | **Tender API** (`server`) | **AWS App Runner**, region ap-south-1 (Mumbai) | container from one Docker image, `npm run server`, port 8787, public https URL | managed HTTPS, no servers to maintain, cheapest AWS way to run a container 24/7 |
 | **Demo shop** (`demo-shop`) | **AWS App Runner**, second service | same image, `npm run shop`, port 8788 | separate URL = separate merchant site, as the Whitechain judges expect |
 | **Agent** | laptop (`npm run agent`) or a one-off container | not a service: it runs when the demo needs it | nothing to keep running |
-| **Frontend** (`app`, incl. the `tender.js` widget) | **Cloudflare Pages** | static Vite build with `VITE_API_URL` baked in, `_redirects` for SPA routing and an `/api/*` proxy to App Runner | free, fast, global; the widget is served from the same origin |
+| **Frontend** (`app`, incl. the `tender.js` widget) | **Cloudflare, Workers static assets** (Pages now deploys this way) | static Vite build with `VITE_API_URL` baked in; `app/wrangler.jsonc` serves `dist/` with SPA fallback; the browser calls the API directly (CORS) | free, fast, global; the widget is served from the same origin. **Live: https://tender.tender-app.workers.dev** |
 | **Contracts** | Unichain Sepolia, Whitechain Sepolia | `scripts/deploy-unichain.sh`, `scripts/deploy-whitechain.sh` | per sponsor requirements |
 
-Files: `Dockerfile`, `scripts/deploy-aws.sh` (ECR push + App Runner create/update for both services), `scripts/deploy-cloudflare.sh` (build + `wrangler pages deploy`), `.env.deploy.example` (runtime env for the containers).
+Files: `Dockerfile`, `scripts/deploy-aws.sh` (ECR push + App Runner create/update for both services, capped at 2 instances each), `scripts/deploy-cloudflare.sh` (build + `wrangler deploy`), `app/wrangler.jsonc`, `.env.deploy.example` (runtime env for the containers).
+
+**Status (Nov 6):**
+- Frontend: **live** at https://tender.tender-app.workers.dev, built against a placeholder API, so the landing page works and app pages say "API offline". Redeploy with the real API URL once the backend is up.
+- Backend image: built for linux/amd64 and **pushed to ECR** (`tender`, ap-south-1).
+- Backend services: **blocked**. The AWS account is on the Free plan with $100 credits, and its registration is incomplete, so App Runner, Lambda, EC2, S3 and the rest answer "not signed up". On hold by the user's choice; the scripts are ready.
+- Budgets: `tender-testing` $20/month and `tender-total` $100, email alerts, measured before credits.
 
 Needed from the user, only when we reach this step: an AWS IAM user access key (ECR + App Runner + IAM role creation), a Cloudflare API token with Pages:Edit and the account id. Secrets go into `.env.deploy` (git-ignored); nothing is committed.
 
