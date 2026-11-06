@@ -33,7 +33,7 @@
 > - **0x Swap-and-Send:** a swap API whose output goes to a `recipient`. 0x picks the route on its server; the recipient gets *whatever the swap produced*.
 > - **Coinbase Commerce Onchain Payment Protocol (OPP):** "transfer intents" that an **operator** (Coinbase) signs; the payer's swap goes through Coinbase's transfers contract (Uniswap v3). Hosted checkout.
 >
-> **Status of every proof below (Nov 6):** 44 Solidity checks + 51 TypeScript tests pass; both end-to-end fork flows pass; Unichain and Whitechain are live with real transactions. Hedera's live run is waiting on testnet accounts.
+> **Status of every proof below (Nov 6):** 44 Solidity checks + 51 TypeScript tests pass; both end-to-end fork flows pass; Unichain and Whitechain are live with real transactions. Hedera is live too (settled in HBAR; see B29).
 
 ### The differences at a glance
 
@@ -49,7 +49,7 @@
 | D8 | **On-chain invoice lifecycle with refunds to the original payer** | no | no | one-shot intents | 15 tests + 4 invariants + [refund](https://explorer.testnet.whitechain.io/tx/0x798631d466d2c2c43662b1ba7eade7f36ca9404b32ce5204b95a234f7d8dd710) |
 | D9 | **Merchant back office**: history, refunds, CSV across rails | no | no | hosted dashboard only | 8 tests + fork runs |
 | D10 | **Self-hostable 23-line widget**, public contracts only | n/a | n/a | hosted by Coinbase | 3 tests + browser run |
-| D11 | **Sells to AI agents** (x402 on Hedera) with spending controls and an HCS audit log | no | no | no | 16 tests (live run pending) |
+| D11 | **Sells to AI agents** (x402 on Hedera) with spending controls and an HCS audit log | no | no | no | 20 tests + [audit topic](https://hashscan.io/testnet/topic/0.0.11345065) |
 | D12 | **One merchant, three chains, one ledger**, reproducible on a laptop | single chain | per chain | per chain | 2 fork flows + 2 live chains |
 
 ---
@@ -212,7 +212,7 @@
 - [run.ts L68](tender/agent/src/run.ts#L68) the policy runs on the **real 402 price tag** right before signing.
 - [run.ts L30](tender/agent/src/run.ts#L30) `audit` writes to the HCS topic.
 
-**Proof:** 6 policy tests, 4 HCS tests, 3 audit-API tests, 3 shop tests. **Live run pending:** it needs the Hedera testnet accounts (next step).
+**Proof:** 9 policy tests, 4 HCS tests, 3 audit-API tests, 4 shop tests. **Live:** two purchases settled and a third refused, all in HCS topic [`0.0.11345065`](https://hashscan.io/testnet/topic/0.0.11345065) (B29).
 **Say it:** "An agent is just another customer: it pays per request, inside a budget, and every decision is publicly logged."
 
 ---
@@ -1618,3 +1618,26 @@ The **browser** version passes too ([ui.e2e.ts L95](tender/e2e/ui.e2e.ts#L95)): 
 **The test** replays the legs on a tiny **stateful constant-product AMM** (reserves change after every swap, like a real pool). Each leg must deliver at least its promised minimum, and the minimum may not be needlessly loose (within 2 units). Re-introducing the old stand-alone quoting makes this test fail.
 
 **Judge question.** "What if two tokens in a basket route through the same pool?" → "The planner quotes them against each other: the second leg is priced after the first leg's impact. If prices still move more than the slippage buffer, the contract's per-leg minimum makes the whole transaction revert; nothing is paid wrongly."
+
+---
+
+### B29. Live on Hedera testnet: an agent paying with no human (Nov 7)
+**What happened, in order** (record: [deployments/hedera-testnet.env](tender/deployments/hedera-testnet.env), runbook [scripts/hedera-live.sh](tender/scripts/hedera-live.sh)):
+1. Agent `0.0.11343747` reads the shop's `/.well-known/tender.json`, calls the paid endpoint and gets **HTTP 402**: "pay 0.5 HBAR to `0.0.11344182`, fee payer `0.0.7162784` (Blocky402)".
+2. Its **spending policy** checks the real price ($0.05 at $0.10/HBAR) before signing. Purchases 1 and 2 are allowed; the agent signs a transfer, and the **facilitator submits it and pays the network fee**. Settled: [tx 1](https://hashscan.io/testnet/transaction/0.0.7162784@1793996113.115144711), [tx 2](https://hashscan.io/testnet/transaction/0.0.7162784@1793996119.194396627).
+3. Purchase 3: **refused** ("per-merchant cap reached: spent $0.10 of $0.1") *before anything is signed*.
+4. Every decision is a message in **one HCS topic**, [`0.0.11345065`](https://hashscan.io/testnet/topic/0.0.11345065): purchase, purchase, refused, in consensus order.
+
+**Why HBAR and not USDC.** USDC on Hedera testnet comes from Circle's faucet. On Nov 7 it wasn't delivering to *anyone*: we scanned 2,500 recent transfers and found no faucet-sized USDC credits. So the shop got a switch, `X402_ASSET=hbar`, which prices the same endpoint in native HBAR at a set rate (testnet HBAR has no market price). USDC stays the default. Hedera's *required* criteria (x402 endpoint, settlement on testnet via a listed facilitator, an agent paying with no human, a settled tx id) are all met; "settles in HTS USDC" was an extra-points item.
+
+**Three bugs the first live run found, all fixed with tests**
+- The **x402 library's own guard** refuses any asset outside its default list. The agent now lists HBAR *only* when its policy names a rate, capped per payment at the policy's human-approval limit, so the library and our policy enforce the same ceiling.
+- `recordSpend` rebuilt the ledger without its `topicId`, so purchase 2 opened a **second** HCS topic and split the log. Fixed (`...ledger`), and a test fails if it comes back.
+- The Hedera SDK kept gRPC connections open, so the agent never exited. It now exits when `main()` finishes.
+
+**Honest gaps:** the merchant dashboard lists USDC sales from the mirror node, not HBAR ones yet. The spending policy runs in the agent's own code, not on-chain (that's why the audit log is public).
+
+**Judge questions**
+- "Why HBAR?" → "Circle's Hedera testnet faucet wasn't delivering. The endpoint is USDC by default; one setting switches it, and the agent only accepts HBAR because its policy names a rate."
+- "What stops the agent overspending?" → "Its policy checks the real 402 price before signing: allowlist, per-merchant cap, total budget, human approval above a threshold. And the x402 library caps each payment again. Message 3 in the topic is a refusal."
+- "Who paid the fees?" → "The facilitator, Blocky402. The agent only signs the transfer; Blocky402 submits it and pays the network fee."
