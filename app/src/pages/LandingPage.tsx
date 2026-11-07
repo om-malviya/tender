@@ -234,7 +234,7 @@ export function LandingPage() {
           <div className="reveal">
             <h3>Built at ETHGlobal Mumbai 2026</h3>
             <p>
-              Built by a two-person team. 44 Solidity checks against a real v4 PoolManager, 56 TypeScript tests, two local end-to-end flows, and
+              Built solo. 44 Solidity checks against a real v4 PoolManager, 56 TypeScript tests, two local end-to-end flows, and
               a browser check of every page and button against the live testnets, all passing.
             </p>
           </div>

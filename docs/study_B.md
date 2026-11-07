@@ -1,6 +1,6 @@
 # Study guide for Project B (Tender)
 
-> **For:** you, Person 2, who leads Tender in a two-person team. You know roughly how a blockchain works and need to present Tender to the sponsor judges and answer their questions.
+> **For:** you, Person 2, who builds and presents Tender solo. You know roughly how a blockchain works and need to present Tender to the sponsor judges and answer their questions.
 > **Budget:** about 8.5 hours. **Start with PART A** (the differences from Universal Router, 0x and Coinbase Commerce, and how each is built): it is the core of the presentation. If you only have about 4.5 hours, do PART A plus the **minimum path**: Modules 1, 3, 4 and 8.
 > **How to use each module:**
 > 1. Read the explanation.
@@ -1303,9 +1303,9 @@ That's the honest answer to **"how do you know it works?"**:
 
 ## Build log, part 3: the frontend (first draft, design may change)
 
-> The look (colours, layout, wording) is **provisional** until you and your teammate confirm a design. The parts below marked **stays** are the logic. They won't change when the design does, so study those first.
+> The look (colours, layout, wording) is **provisional** until you confirm a design. The parts below marked **stays** are the logic. They won't change when the design does, so study those first.
 
-**The layout (from your teammate's brief):** EAS Scan's explorer style in a dark theme. The navigation buttons sit in a sidebar pinned to the **far left**, and **the rest of the screen** is the content.
+**The layout (from the design brief):** EAS Scan's explorer style in a dark theme. The navigation buttons sit in a sidebar pinned to the **far left**, and **the rest of the screen** is the content.
 
 | Page | URL | What it shows |
 |---|---|---|

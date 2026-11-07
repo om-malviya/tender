@@ -2,8 +2,8 @@
 
 **Pay with any token. The merchant gets the exact stablecoin amount.**
 
-> ETHGlobal Mumbai 2026 · Project B (team project; Person 2 leads it) · Plan v2, Nov 4 2026
-> **Build timing (team decision, Nov 4):** the team has a conference during the hackathon, so Project B is built **before** kickoff. The team says it has told the organisers. Build in the open: keep the organisers' written OK, never rewrite commit dates, and add a "Build timeline" section to the README (§1).
+> ETHGlobal Mumbai 2026 · Project B (solo project, built by Person 2) · Plan v2, Nov 4 2026
+> **Build timing (decision, Nov 4):** the author has a conference during the hackathon, so Project B is built **before** kickoff. The author says they have told the organisers. Build in the open: keep the organisers' written OK, never rewrite commit dates, and add a "Build timeline" section to the README (§1).
 > **v2 change:** `UniswapCheckout` calls the v4 PoolManager directly (unlock → swap → settle → take) instead of the Universal Router, so swaps are tested locally against a real PoolManager (§5.2).
 > Verification labels in this file: **[V]** means checked on the official sponsor page or docs on Nov 4. **[CHECK]** means it is unconfirmed and must be tested before we rely on it.
 
@@ -43,7 +43,7 @@
   3. **Pay-per-request sales to AI agents through x402** on Hedera testnet, for the Hedera x402 prize.
 - **Prizes targeted (the maximum of 3 partner prizes):** Uniswap "Build with Uniswap" ($10k), Whitechain "Operate" ($5k) and Hedera "AI Agents That Pay" ($6.5k).
 - **Uniswap comes first.** The Uniswap part has to work on its own. Whitechain and Hedera are layered on top, and the plan cuts Hedera first if time runs out.
-- **Resolved Nov 7: Tender is submitted as one team project** (teammate: parthdagia05). The original precondition was to ask on the ETHGlobal Discord whether two members of one group can submit two separate solo projects. If the answer is no, Project B is dropped and both of you build Receipts.
+- **Resolved Nov 7: Tender is submitted as a solo project** by Person 2. The original precondition was to ask on the ETHGlobal Discord whether two members of one group can submit two separate solo projects. If the answer is no, Project B is dropped and both of you build Receipts.
 
 ---
 
@@ -53,7 +53,7 @@
 |---|---|
 | Submission deadline Sat Nov 7, 09:00 IST [V] | No late submissions. |
 | At most 3 partner prizes per submission [V] | Uniswap, Whitechain and Hedera fill all three. Project A uses ENS, Arkiv and World, so the two projects don't overlap. |
-| Built from scratch [V]: "all work on your project must begin after the hackathon officially starts" | **Team decision: build before kickoff** because of the conference clash; the team has told the organisers. Keep their confirmation in writing, and confirm which track this lets us enter. "Kickoff track" doesn't appear on the prize pages. Keep honest commit dates, and add a README "Build timeline" (what was built before the event, what was built during it). If the organisers say pre-built work can't enter the main prizes, enter the **Continuity** prizes instead: Uniswap ($5k, 4 × $1,250), Whitechain "Bring Your Product to Whitechain" ($3k, 2 × $1,500, needs proof of starting point + a "before and during" README section), Hedera Continuity ($1.5k, 2 × $750). |
+| Built from scratch [V]: "all work on your project must begin after the hackathon officially starts" | **Decision: build before kickoff** because of the conference clash; the author has told the organisers. Keep their confirmation in writing, and confirm which track this lets us enter. "Kickoff track" doesn't appear on the prize pages. Keep honest commit dates, and add a README "Build timeline" (what was built before the event, what was built during it). If the organisers say pre-built work can't enter the main prizes, enter the **Continuity** prizes instead: Uniswap ($5k, 4 × $1,250), Whitechain "Bring Your Product to Whitechain" ($3k, 2 × $1,500, needs proof of starting point + a "before and during" README section), Hedera Continuity ($1.5k, 2 × $750). |
 | AI use must be documented [V] | `AI_USAGE.md`: which tools, which parts, which decisions you made yourself. Commit the prompts and specs. **You must be able to explain every contract and function at the booth.** |
 | Demo video [V] | **Decided Nov 7: one video (~3:45)** for ETHGlobal that also meets every sponsor's video rule (Whitechain 2–4 min with both parties; Hedera ≤5 min with the HashScan link). Each sponsor's section of the submission form points to its timestamps. Script: `tender/docs/DEMO_SCRIPT.md`. |
 | Each project separate [PDF] | Project B gets its own repo, demo and README, separate from Receipts. |
@@ -531,7 +531,7 @@ tender/
 - [ ] **Two Hedera testnet accounts** (merchant and agent) from portal.hedera.com. Note the key type. Associate them with the USDC token.
 - [ ] **Uniswap Developer Platform API key** (developers.uniswap.org/dashboard).
 - [ ] **Tools installed:** Foundry (`foundryup`), Node 20+, pnpm, git, and a browser wallet.
-- [x] **Discord:** two-solo-projects question: resolved, Tender is a team project.
+- [x] **Discord:** two-solo-projects question: resolved, Tender is a solo project.
 
 ---
 
@@ -601,7 +601,7 @@ tender/
 | 7 | ~~`whitechain` profile compiles with 0.8.30~~ | **Done Nov 4:** `FOUNDRY_PROFILE=whitechain forge script script/DeployWhitechain.s.sol` compiles with 0.8.30/prague | n/a |
 | 8 | ~~Hedera facilitator assets and USDC token ID~~ | **Done Nov 4:** Blocky402 `/supported` lists `exact` on `hedera:testnet`, fee payer `0.0.7162784`; USDC = `0.0.429274` (constant in `@x402/hedera`); our paywall returns a correct 402 live | n/a |
 | 9 | ~~x402 middleware package~~ | **Done Nov 4:** `@x402/hono` `paymentMiddleware` (used in demo-shop) | n/a |
-| 10 | Two solo projects allowed | resolved: one team project | n/a |
+| 10 | Two solo projects allowed | resolved: solo project | n/a |
 
 ---
 

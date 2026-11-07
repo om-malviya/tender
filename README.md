@@ -4,11 +4,11 @@
 
 A merchant creates an invoice for an exact stablecoin amount. The customer pays with any token they hold: Tender ranks every Uniswap v4 route by true cost, runs an exact-output swap, sends the merchant exactly the invoice amount, and returns the unused input to the payer in the same transaction. A Uniswap v4 **hook** lets *any* router pay an invoice just by swapping through the pool. The same merchant takes USDT on **Whitechain** (invoices, partial refunds, CSV export) and sells to AI agents per request over **x402 on Hedera**, all in one ledger.
 
-ETHGlobal Mumbai 2026 · team project · team: [om-malviya](https://github.com/om-malviya), [parthdagia05](https://github.com/parthdagia05) · tracks: Uniswap Foundation (Build with Uniswap), Whitechain (Operate), Hedera (AI Agents That Pay: x402).
+ETHGlobal Mumbai 2026 · solo project · built by [om-malviya](https://github.com/om-malviya) · tracks: Uniswap Foundation (Build with Uniswap), Whitechain (Operate), Hedera (AI Agents That Pay: x402).
 
 - Demo video: _[link]_ (script: [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md))
 - Website: [tender.tender-app.workers.dev](https://tender.tender-app.workers.dev) (the landing page; the app pages need the API, which isn't hosted: run the full app with `bash scripts/dev-fork.sh`, or against the live testnets with `bash scripts/live-local.sh`)
-- Build timeline: see [Build timeline](#build-timeline) (the team had a conference clash and informed the organisers; work started before kickoff and is documented commit by commit).
+- Build timeline: see [Build timeline](#build-timeline) (the author had a conference clash and informed the organisers; work started before kickoff and is documented commit by commit).
 
 ## Deployed contracts and proof
 
@@ -136,7 +136,7 @@ Not solved, said plainly: testnet liquidity is our own seeded pools; the hook se
 
 ## Built with AI
 
-See [`AI_USAGE.md`](AI_USAGE.md): which tools, which parts, and which decisions were made by the team. Planning artifacts are in `docs/`.
+See [`AI_USAGE.md`](AI_USAGE.md): which tools, which parts, and which decisions were made by the author. Planning artifacts are in `docs/`.
 
 ## Build timeline
 

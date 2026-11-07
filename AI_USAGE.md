@@ -1,6 +1,6 @@
 # How AI was used (ETHGlobal rule: "clearly document where and how AI tools were used")
 
-**Tool:** Claude Code (Anthropic), used as a pair programmer throughout. The team member who led Tender is new to Solidity and web3; every contract and function was explained line by line and is documented in `docs/study_B.md` so the team can defend it at the booth.
+**Tool:** Claude Code (Anthropic), used as a pair programmer throughout. The author, who built Tender solo, is new to Solidity and web3; every contract and function was explained line by line and is documented in `docs/study_B.md` so the author can defend it at the booth.
 
 ## What AI drafted
 - First drafts of all Solidity (`CheckoutCore`, `UniswapCheckout`, `CheckoutHook`, scripts) and their tests.
@@ -8,7 +8,7 @@
 - Research summaries of the sponsor prize pages, Uniswap v4 / Whitechain / Hedera x402 docs, and the comparison with Universal Router, 0x Swap-and-Send and Coinbase Commerce OPP.
 - The documents in this repo, including this one.
 
-## What the team decided (not the AI)
+## What the author decided (not the AI)
 - The product itself: exact-output any-token checkout, the three rails, "the merchant gets the exact amount" as the guarantee.
 - Choosing option B2 (route-ranked checkout) over a v4 hook-only project; later adding the **CheckoutHook** specifically to differ from the three existing products, after reviewing that comparison.
 - Solidity as the core, and building before kickoff because of a conference clash (organisers informed).

@@ -55,8 +55,8 @@ Links for C12–C14 are in the README's table at the top and in `deployments/*.e
 
 | Time | On screen | Say |
 |---|---|---|
-| 0:00 | C1 hero | **"At a crypto checkout you usually hold the wrong token. Tender lets you pay with any token, and the merchant gets the exact amount."** |
-| 0:12 | C2 table | The differences paragraph (section 2). |
+| 0:00 | C1 hero | **"Have you ever tried to pay at a crypto checkout and realised you're holding the wrong token? The shop wants USDC, your wallet has something else, so you leave, swap, come back, and hope the price didn't move. Tender fixes that: you pay with any token you hold, and the merchant still gets the exact amount."** |
+| 0:18 | C2 table | **"So how is that different from what's already out there?"** Then the differences paragraph (section 2). |
 | 0:35 | C3 shop | **"This is a separate shop. Its whole Tender integration is this code: 23 lines."** |
 | 0:45 | C4: balances → ranked routes | **"I hold DEMO and a little WETH; the shop wants 1.00 USDC. Tender asks the Uniswap v4 Quoter about every route and ranks them by true cost: fees, impact and gas. The two-hop route beats the thin direct pool."** |
 | 1:05 | C4: review → receipt; C5 | **"Our contract talks to the v4 PoolManager directly. I pay up to this; the merchant receives exactly 1.00, and the unused DEMO comes back in the same transaction. The shop confirms it on-chain."** |
